@@ -23,6 +23,8 @@ body{display:flex;align-items:center;justify-content:center;}
   padding-right:env(safe-area-inset-right);
   background:#9bbc0f;overflow:hidden;
   image-rendering:pixelated;
+  -webkit-touch-callout:none;
+  user-select:none;-webkit-user-select:none;
 }
 
 /* Only the main map canvases fill the screen */
@@ -341,7 +343,7 @@ body{display:flex;align-items:center;justify-content:center;}
 #intro-go:active{transform:translate(2px,2px);box-shadow:2px 2px 0 #306230;}
 </style>
 </head>
-<body>
+<body oncopy="return false" oncut="return false" onselectstart="return false">
 <div id="screen">
   <canvas id="c"></canvas>
   <canvas id="scanlines"></canvas>
@@ -482,12 +484,10 @@ body{display:flex;align-items:center;justify-content:center;}
     <div class="intro-title">EC<span>倉庫</span><br>PICKING</div>
     <div class="intro-sub">〜 安全第一 〜</div>
     <ul class="intro-rules">
-      <li>マップをタップして移動</li>
-      <li>棚をタップ → 引き出し一覧</li>
-      <li>黄ボタン長押し → スキャナー表示</li>
-      <li>引き出しをドラッグしてごそごそ</li>
-      <li>棚は通れない！ 通路を歩く</li>
-      <li>バッチ後は回収→空コンテナ→次へ</li>
+      <li>📱をみて行き先を確認</li>
+      <li>棚をタップして📱に表示された引き出しをタップ</li>
+      <li>商材をスキャンしてコンテナにいれる</li>
+      <li>バッチ終了後は回収ゾーンへ</li>
     </ul>
     <button id="intro-go">START GAME</button>
     <div style="margin-top:14px;display:flex;align-items:center;gap:10px;font-family:'Press Start 2P',monospace;font-size:7px;color:#8bac0f;">
@@ -531,24 +531,40 @@ const PX='Press Start 2P'; // pixel font
 //  ITEM DATABASE
 // ══════════════════════════════════════════════════════════════
 const TYPE_SHAPES={
-  'ピアス':    {w:30,h:24,r:.45},   // round-ish
-  '指輪':      {w:28,h:22,r:.5},    // oval
-  'ネックレス':{w:52,h:18,r:.15},   // HORIZONTAL (was vertical)
-  '時計':      {w:46,h:32,r:.12},   // landscape watch
-  'ブレスレット':{w:44,h:20,r:.4},  // horizontal band
-  'イヤリング': {w:22,h:28,r:.35},  // slightly taller
-  'リング':    {w:26,h:26,r:.5},    // circular
-  'チャーム':  {w:30,h:20,r:.3},    // tag shape
+  'ピアス':      {w:30,h:24,r:.45},
+  '指輪':        {w:28,h:22,r:.5},
+  'ネックレス':  {w:52,h:18,r:.15},
+  '時計':        {w:46,h:32,r:.12},
+  'ブレスレット':{w:44,h:20,r:.4},
+  'イヤリング':  {w:24,h:28,r:.35},
+  'リング':      {w:26,h:26,r:.5},
+  'チャーム':    {w:32,h:20,r:.3},
+  'バングル':    {w:40,h:16,r:.5},
+  'アンクレット':{w:48,h:16,r:.4},
+  'ヘアピン':    {w:44,h:14,r:.2},
+  'ブローチ':    {w:34,h:28,r:.4},
+  'ティアラ':    {w:46,h:22,r:.3},
+  'カフス':      {w:30,h:22,r:.2},
+  'ペンダント':  {w:24,h:36,r:.35},
+  'ストラップ':  {w:48,h:14,r:.15},
 };
 const TYPES_NORMAL=[
-  {p:'A',type:'ピアス',      n:200},
-  {p:'B',type:'指輪',        n:200},
+  {p:'A',type:'ピアス',      n:150},
+  {p:'B',type:'指輪',        n:150},
   {p:'C',type:'ネックレス',  n:100},
   {p:'D',type:'時計',        n:100},
   {p:'E',type:'ブレスレット',n:100},
   {p:'F',type:'イヤリング',  n:100},
   {p:'G',type:'リング',      n:100},
   {p:'H',type:'チャーム',    n:100},
+  {p:'I',type:'バングル',    n:80},
+  {p:'J',type:'アンクレット',n:80},
+  {p:'K',type:'ヘアピン',    n:80},
+  {p:'L',type:'ブローチ',    n:80},
+  {p:'M',type:'ティアラ',    n:60},
+  {p:'N',type:'カフス',      n:60},
+  {p:'O',type:'ペンダント',  n:60},
+  {p:'P',type:'ストラップ',  n:60},
 ];
 const TYPES_HARD=[
   {p:'A',type:'ピアス',      n:300},
@@ -559,6 +575,14 @@ const TYPES_HARD=[
   {p:'F',type:'イヤリング',  n:200},
   {p:'G',type:'リング',      n:200},
   {p:'H',type:'チャーム',    n:200},
+  {p:'I',type:'バングル',    n:160},
+  {p:'J',type:'アンクレット',n:160},
+  {p:'K',type:'ヘアピン',    n:160},
+  {p:'L',type:'ブローチ',    n:160},
+  {p:'M',type:'ティアラ',    n:120},
+  {p:'N',type:'カフス',      n:120},
+  {p:'O',type:'ペンダント',  n:120},
+  {p:'P',type:'ストラップ',  n:120},
 ];
 const DB={}, ALL_CODES=[];
 function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),16777619)>>>0;return h;}
@@ -630,15 +654,16 @@ function rrc(a){return a[Math.floor(Math.random()*a.length)];}
 function mkDrawers(shelfId){
   const prefix = shelfId.match(/^[A-Z]+/)[0];
   const baseNum = parseInt(shelfId.match(/\d+/)[0]);
-  const fillMax = hardMode ? 1.5 : 1.35;
-  const fillMin = hardMode ? 1.0 : 0.0;
+  const fillMax = hardMode ? 4.0 : 2.0;  // ハード200-400%、ノーマル0-200%
+  const fillMin = hardMode ? 2.0 : 0.0;
+  // 新フォーマット: A10-01 (prefix + col2桁 + "-" + 引き出し2桁)
+  const colCode = String(Math.floor(baseNum/100)).padStart(2,'0');
   return Array.from({length:40},(_,i)=>{
     const fill=fillMin+Math.random()*(fillMax-fillMin);
-    const cnt=Math.min(18,Math.floor(fill*14));
+    const cnt=Math.min(36,Math.floor(fill*18));
     const items=[];
     if(cnt>0){const dom=rrc(ALL_CODES);for(let j=0;j<cnt;j++)items.push(Math.random()<.62?dom:rrc(ALL_CODES));}
-    const boxNum = baseNum + i + 1;
-    const label  = `${prefix}${boxNum}`;
+    const label = `${prefix}${colCode}-${String(i+1).padStart(2,'0')}`;
     return{id:i, label, items:[...items]};
   });
 }
@@ -955,10 +980,10 @@ function renderMap(){
           ctx.font=`900 ${T*.42|0}px '${PX}'`;
           ctx.textAlign='center';ctx.textBaseline='middle';
           ctx.fillText(shelf.ltr,x+T/2,y+T*.33);
-          // Number (small below)
+          // 棚番号: A10 形式 (col番号2桁)
           ctx.fillStyle=GB2;
-          ctx.font=`${T*.16|0}px '${PX}'`;
-          ctx.fillText(shelf.colNum,x+T/2,y+T*.72);
+          ctx.font=`${T*.18|0}px '${PX}'`;
+          ctx.fillText(String(shelf.colNum/100|0).padStart(2,'0'),x+T/2,y+T*.72);
 
           // Target highlight — only the exact shelf containing the scanner's BOX
           // Hidden in hard mode (even with scanner held)
@@ -1079,7 +1104,13 @@ function loop(){
   if(!running)return;
   // Move player
   const arr=moveEnt(P);
-  if(arr&&pendingShelf){openShelfPanel(pendingShelf);pendingShelf=null;}
+  if(arr&&pendingShelf){
+    // 到着後も正面チェック（念のため）
+    const ar=accessRow(pendingShelf.row);
+    const atx=pendingShelf.col*T+T/2, aty=ar*T+T/2;
+    if(Math.hypot(P.x-atx,P.y-aty)<T*0.55){openShelfPanel(pendingShelf);}
+    pendingShelf=null;
+  }
   // Check zone triggers
   if(!panelOpen&&!drawerOpen)checkZoneTrigger();
   // Bots — tile-based movement like player
@@ -1127,9 +1158,10 @@ cv.addEventListener('click',e=>{
   if(map[tr][tc]===SHELF){
     const shelf=SMAP[`${tr},${tc}`];if(!shelf)return;
     const ar=accessRow(tr);
-    const atx=tc*T+T/2,aty=ar*T+T/2;
-    const pr=Math.floor(P.y/T),pc=Math.floor(P.x/T);
-    if(pr===ar&&pc===tc){openShelfPanel(shelf);}
+    const atx=tc*T+T/2, aty=ar*T+T/2;
+    // 棚の正面（アクセスタイルの中心から0.55タイル以内）にいる時だけ即開く
+    const dist=Math.hypot(P.x-atx, P.y-aty);
+    if(dist<T*0.55){openShelfPanel(shelf);}
     else if(!blocked(atx,aty,false)){P.tx=atx;P.ty=aty;pendingShelf=shelf;moveCount++;}
     return;
   }
@@ -1251,7 +1283,8 @@ function getTargetBoxLabel(){
 currentShelf=null;
 function openShelfPanel(shelf){
   panelOpen=true;currentShelf=shelf;
-  document.getElementById('sp-hdr-title').textContent=`棚 ${shelf.id}`;
+  const shelfLabel=shelf.ltr+String(shelf.colNum/100|0).padStart(2,'0');
+  document.getElementById('sp-hdr-title').textContent=`棚 ${shelfLabel}`;
   document.getElementById('sp-hdr-sub').textContent='';
   document.getElementById('voice-btn').style.display='none';
   document.getElementById('bgm-wrap').style.display='none'; // #6
@@ -1324,7 +1357,8 @@ function updateDrawerScannerBar(){
 function openDrawerPanel(dr,shelf){
   drawerOpen=true;currentDrawer=dr;currentDrawerShelf=shelf;
   document.getElementById('dp-title').textContent=dr.label;
-  document.getElementById('dp-shelf-lbl').textContent=`棚 ${shelf.id}`;
+  const dpShelfLabel=shelf.ltr+String(shelf.colNum/100|0).padStart(2,'0');
+  document.getElementById('dp-shelf-lbl').textContent=`棚 ${dpShelfLabel}`;
   hide('dp-confirm');hide('dp-pre-scan');hide('dp-empty');
   hide('shelf-panel');panelOpen=false;
   document.getElementById('scan-btn').style.display='none';
