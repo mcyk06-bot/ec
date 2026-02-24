@@ -1,0 +1,1767 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>EC倉庫 PICKING</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{width:100%;height:100%;overflow:hidden;background:#0f380f;}
+body{display:flex;align-items:center;justify-content:center;}
+
+/* ── Game Screen — fills entire display including notch/home bar ── */
+#screen{
+  position:relative;
+  width:100vw;
+  /* Use dvh so it fills the real viewport on iOS */
+  height:100dvh;
+  /* Also account for safe areas so content isn't hidden behind browser chrome */
+  padding-top:env(safe-area-inset-top);
+  padding-bottom:env(safe-area-inset-bottom);
+  padding-left:env(safe-area-inset-left);
+  padding-right:env(safe-area-inset-right);
+  background:#9bbc0f;overflow:hidden;
+  image-rendering:pixelated;
+}
+
+/* Only the main map canvases fill the screen */
+#c, #scanlines{position:absolute;top:0;left:0;width:100%;height:100%;image-rendering:pixelated;}
+#scanlines{pointer-events:none;z-index:100;opacity:.18;}
+
+/* ── HUD ── */
+#hud{
+  position:absolute;bottom:0;left:0;right:0;z-index:30;
+  background:#0f380f;border-top:3px solid #306230;
+  padding:8px 12px;
+  padding-bottom:calc(8px + env(safe-area-inset-bottom));
+  display:flex;align-items:center;gap:10px;
+  min-height:calc(68px + env(safe-area-inset-bottom));
+}
+#hud-left{flex:1;display:flex;flex-direction:column;gap:4px;}
+#hud-batch{font-family:'Press Start 2P',monospace;font-size:7px;color:#9bbc0f;}
+#hud-prog{font-family:'Press Start 2P',monospace;font-size:11px;color:#9bbc0f;letter-spacing:.05em;}
+#hud-state-msg{font-family:'Press Start 2P',monospace;font-size:6px;color:#8bac0f;letter-spacing:.03em;}
+
+/* Scan button always on top — above all panels */
+#scan-btn{
+  position:absolute;
+  bottom:calc(20px + env(safe-area-inset-bottom));
+  right:14px;
+  width:56px;height:56px;border-radius:50%;
+  background:#9bbc0f;border:3px solid #306230;
+  outline:3px solid #9bbc0f;
+  font-family:'Press Start 2P',monospace;font-size:5px;
+  color:#0f380f;cursor:pointer;z-index:65;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  user-select:none;-webkit-user-select:none;
+  transition:all .08s;flex-shrink:0;
+  box-shadow:inset 0 3px 0 rgba(255,255,255,.25),inset 0 -3px 0 rgba(0,0,0,.35);
+}
+#scan-btn:active,#scan-btn.held{background:#8bac0f;transform:scale(.91);box-shadow:inset 0 -1px 0 rgba(255,255,255,.15),inset 0 2px 0 rgba(0,0,0,.25);}
+#scan-ico{font-size:18px;line-height:1;}
+
+/* Voice button — right side, immediately left of scan-btn */
+#voice-btn{
+  position:absolute;
+  bottom:calc(20px + env(safe-area-inset-bottom));
+  right:calc(14px + 56px + 10px + 56px + 10px);  /* scan + gap + bgm-btn + gap */
+  width:56px;height:56px;border-radius:50%;
+  background:#306230;border:3px solid #9bbc0f;
+  font-family:'Press Start 2P',monospace;font-size:5px;color:#9bbc0f;
+  cursor:pointer;z-index:65;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  user-select:none;-webkit-user-select:none;transition:all .08s;flex-shrink:0;
+  box-shadow:inset 0 3px 0 rgba(255,255,255,.1),inset 0 -3px 0 rgba(0,0,0,.35);
+}
+#voice-btn:active{background:#0f380f;transform:scale(.91);}
+#voice-ico{font-size:18px;line-height:1;}
+
+/* BGM button (#12) */
+#bgm-btn{
+  position:absolute;
+  bottom:calc(20px + env(safe-area-inset-bottom));
+  right:calc(14px + 56px + 10px);  /* scan-btn right + scan-btn width + gap */
+  width:44px;height:44px;border-radius:50%;
+  background:#1a3e0a;border:2px solid #306230;
+  font-size:16px;cursor:pointer;z-index:65;
+  display:flex;align-items:center;justify-content:center;
+  user-select:none;-webkit-user-select:none;transition:all .08s;
+  /* vertically center with scan btn (56px tall, 44px here → offset by 6) */
+  bottom:calc(20px + 6px + env(safe-area-inset-bottom));
+}
+#bgm-btn:active{background:#0f380f;transform:scale(.91);}
+
+/* Volume slider (#12) */
+#bgm-vol{
+  position:absolute;
+  bottom:calc(20px + env(safe-area-inset-bottom));
+  right:calc(14px + 56px + 10px + 44px + 6px);
+  width:50px;height:8px;
+  -webkit-appearance:none;appearance:none;
+  background:#306230;border-radius:4px;cursor:pointer;z-index:65;
+  /* vertically center with scan btn */
+  bottom:calc(44px + env(safe-area-inset-bottom));
+  accent-color:#9bbc0f;
+}
+
+/* Scanner panel also on top */
+#sp{
+  position:absolute;
+  bottom:calc(88px + env(safe-area-inset-bottom));
+  left:8px;right:8px;
+  background:#0f380f;border:3px solid #8bac0f;border-radius:2px;
+  padding:10px 12px;z-index:66;display:none;
+  font-family:'Press Start 2P',monospace;
+  image-rendering:pixelated;
+}
+#sp.show{display:block;}
+.sp-h{font-size:7px;color:#306230;margin-bottom:8px;border-bottom:1px solid #306230;padding-bottom:5px;}
+#sp-main-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+#sp-shape-area{width:56px;height:56px;flex-shrink:0;border:2px solid #306230;background:#0a2808;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+#sp-cnv{display:block;}
+#sp-info{flex:1;}
+#sp-shelf-lbl{font-size:6px;color:#8bac0f;margin-bottom:4px;}
+#sp-shelf-id{font-size:11px;color:#9bbc0f;margin-bottom:4px;}
+#sp-code{font-size:9px;color:#9bbc0f;}
+#sp-type{font-size:6px;color:#8bac0f;margin-top:2px;}
+#sp-footer{display:flex;justify-content:space-between;font-size:7px;color:#306230;border-top:1px solid #306230;padding-top:5px;}
+
+/* ── Shelf Panel ── */
+#shelf-panel{
+  position:absolute;inset:0;z-index:40;
+  background:#0f380f;display:none;flex-direction:column;
+  font-family:'Press Start 2P',monospace;
+}
+#shelf-panel.show{display:flex;}
+#sp-hdr{
+  background:#0a2808;border-bottom:3px solid #306230;
+  padding:10px 12px;display:flex;justify-content:space-between;align-items:center;
+  flex-shrink:0;
+}
+#sp-hdr-title{font-size:10px;color:#9bbc0f;}
+#sp-hdr-sub{display:none;}
+#sp-hdr-back{
+  background:#306230;border:2px solid #8bac0f;
+  color:#9bbc0f;padding:6px 10px;font-family:'Press Start 2P',monospace;
+  font-size:6px;cursor:pointer;transition:all .08s;
+}
+#sp-hdr-back:active{background:#0f380f;}
+#sp-scan-hold-hint{
+  padding:6px 12px;font-size:6px;color:#306230;text-align:center;
+  border-bottom:1px solid #1a4010;flex-shrink:0;
+  font-family:'Press Start 2P',monospace;
+}
+#sp-scan-hold-hint.revealed{color:#9bbc0f;}
+#shelf-grid-wrap{flex:1;overflow-y:auto;padding:8px;}
+#shelf-grid-wrap::-webkit-scrollbar{width:3px;}
+#shelf-grid-wrap::-webkit-scrollbar-thumb{background:#306230;}
+#shelf-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;}
+
+.dr-btn{
+  background:#1a3e0a;border:2px solid #306230;
+  border-radius:1px;cursor:pointer;padding:0;
+  display:flex;flex-direction:column;
+  transition:border-color .1s;
+  overflow:hidden;user-select:none;
+}
+.dr-btn:active{background:#0f380f;transform:scale(.97);}
+.dr-btn.target-glow{border-color:#9bbc0f;background:#1d4a0c;
+  box-shadow:0 0 0 2px rgba(155,188,15,.4);}
+/* count bar on top (small) */
+.dr-count-bar{
+  background:#0a2808;padding:3px 2px;
+  font-family:'Press Start 2P',monospace;font-size:5px;
+  text-align:center;color:#306230;
+  border-bottom:1px solid #1a3e0a;
+}
+/* label (big) at bottom */
+.dr-label-bar{
+  flex:1;display:flex;align-items:center;justify-content:center;
+  font-family:'Press Start 2P',monospace;font-size:7px;
+  color:#8bac0f;padding:4px 2px;letter-spacing:.02em;
+  text-align:center;line-height:1.3;
+}
+.dr-btn.target-glow .dr-label-bar{color:#9bbc0f;}
+
+/* Opening animation */
+@keyframes drawerOpen{from{transform:scaleY(0);opacity:0}to{transform:scaleY(1);opacity:1}}
+
+/* ── Drawer Panel ── */
+#drawer-panel{
+  position:absolute;inset:0;z-index:50;
+  background:#0f380f;display:none;flex-direction:column;
+  font-family:'Press Start 2P',monospace;
+}
+#drawer-panel.show{display:flex;animation:drawerOpen .2s ease-out;}
+#dp-hdr{
+  background:#0a2808;border-bottom:3px solid #306230;
+  padding:8px 12px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;
+}
+#dp-title{font-size:8px;color:#9bbc0f;}
+#dp-shelf-lbl{font-size:5px;color:#8bac0f;margin-top:2px;}
+#dp-back{
+  background:#306230;border:2px solid #8bac0f;color:#9bbc0f;
+  padding:5px 8px;font-family:'Press Start 2P',monospace;font-size:6px;cursor:pointer;
+}
+#dp-hint{
+  padding:4px 12px;font-size:5px;color:#306230;text-align:center;
+  border-bottom:1px solid #1a4010;flex-shrink:0;
+}
+#dp-canvas-wrap{flex:1;position:relative;overflow:hidden;background:#2a1e12;cursor:grab;min-height:180px;}
+#dp-canvas{position:absolute;top:0;left:0;display:block;touch-action:none;}
+#dp-empty{
+  position:absolute;inset:0;display:none;
+  font-family:'Press Start 2P',monospace;font-size:9px;color:#306230;
+  align-items:center;justify-content:center;text-align:center;padding:20px;
+}
+#dp-empty.show{display:flex;}
+
+/* Scan confirm (in drawer) */
+#dp-pre-scan{
+  background:#0a2808;border-top:3px solid #306230;
+  padding:8px 12px;flex-shrink:0;display:none;
+}
+#dp-pre-scan.show{display:block;}
+#dp-confirm{
+  background:#0a2808;border-top:2px solid #306230;
+  padding:8px 12px;flex-shrink:0;display:none;
+}
+#dp-confirm.show{display:block;}
+#dpc-row{display:flex;gap:10px;align-items:center;margin-bottom:8px;}
+#dpc-canvas{border:2px solid #306230;flex-shrink:0;}
+#dpc-code{font-size:14px;color:#9bbc0f;}
+#dpc-type{font-size:6px;color:#8bac0f;margin-top:3px;}
+#dpc-result-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+#dpc-result-icon{font-size:14px;flex-shrink:0;font-family:'Press Start 2P',monospace;color:#fff;}
+#dpc-match{font-size:8px;font-family:'Press Start 2P',monospace;}
+#dpc-match.ok{color:#ffffff;}
+#dpc-match.ng{color:#ff6060;}
+.dpc-btns{display:flex;gap:6px;}
+.dpc-btn{
+  flex:1;padding:9px 4px;border:2px solid #8bac0f;font-family:'Press Start 2P',monospace;
+  font-size:6px;cursor:pointer;transition:all .08s;
+}
+.dpc-scan-btn{
+  display:block;width:100%;padding:10px;
+  border:2px solid #9bbc0f;font-family:'Press Start 2P',monospace;
+  font-size:8px;cursor:pointer;transition:all .08s;
+  background:#1a3e0a;color:#9bbc0f;
+}
+.dpc-scan-btn:active{background:#0f380f;transform:scale(.97);}
+.dpc-ok{background:#306230;color:#9bbc0f;}
+.dpc-ok:active{background:#0f380f;}
+.dpc-no{background:#0f380f;color:#8bac0f;border-color:#306230;}
+.dpc-no:active{background:#0a2808;}
+
+/* ── Drawer scanner bar (always visible in drawer mode) ── */
+#dp-scanner-bar{
+  background:#0a2808;border-top:3px solid #306230;
+  padding:8px 12px;flex-shrink:0;
+  display:flex;align-items:center;gap:12px;
+  font-family:'Press Start 2P',monospace;
+}
+#dsb-info{flex:1;min-width:0;}
+#dsb-box{font-size:11px;color:#9bbc0f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#dsb-box-lbl{font-size:7px;color:#306230;margin-bottom:3px;}
+#dsb-code{font-size:8px;color:#8bac0f;margin-top:4px;}
+#dsb-prog{font-size:7px;color:#306230;margin-top:3px;}
+.wf-overlay{
+  position:absolute;inset:0;z-index:60;
+  background:rgba(10,28,5,.95);
+  display:none;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:20px;
+  font-family:'Press Start 2P',monospace;
+}
+.wf-overlay.show{display:flex;}
+.wf-icon{font-size:48px;margin-bottom:14px;}
+.wf-title{font-size:11px;color:#9bbc0f;margin-bottom:8px;letter-spacing:.05em;}
+.wf-sub{font-size:7px;color:#8bac0f;line-height:1.9;margin-bottom:20px;}
+.wf-btn{
+  background:#306230;border:3px solid #8bac0f;color:#9bbc0f;
+  padding:12px 24px;font-family:'Press Start 2P',monospace;font-size:9px;
+  cursor:pointer;transition:all .08s;letter-spacing:.05em;
+}
+.wf-btn:active{background:#0f380f;}
+.wf-scan-target{
+  border:3px solid #8bac0f;background:#0f380f;
+  padding:12px 20px;margin:12px 0 16px;
+  font-size:7px;color:#9bbc0f;line-height:2;
+}
+.wf-progress{
+  width:200px;height:8px;background:#0f380f;border:2px solid #306230;
+  margin:10px 0;position:relative;overflow:hidden;
+}
+.wf-progress-bar{height:100%;background:#9bbc0f;width:0%;transition:width .05s;}
+
+/* ── Toast ── */
+#toast{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:#0f380f;border:3px solid #8bac0f;
+  padding:12px 20px;font-family:'Press Start 2P',monospace;font-size:14px;
+  z-index:70;display:none;text-align:center;pointer-events:none;
+}
+#toast.ok{color:#ffffff;border-color:#9bbc0f;background:#0f380f;}
+#toast.ng{color:#ff6060;border-color:#ff6060;background:#0f380f;}
+#toast-sub{font-size:7px;margin-top:5px;color:#8bac0f;}
+
+/* ── Bot bubble ── */
+#bbub{
+  position:absolute;bottom:82px;right:14px;
+  background:#9bbc0f;color:#0f380f;padding:5px 10px;
+  font-family:'Press Start 2P',monospace;font-size:6px;
+  border:2px solid #306230;z-index:32;display:none;
+}
+#bbub::after{content:'';position:absolute;bottom:-8px;right:12px;
+  border:7px solid transparent;border-top-color:#9bbc0f;border-bottom:none;}
+
+/* ── Intro ── */
+#intro{
+  position:absolute;inset:0;z-index:90;
+  background:#0f380f;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:20px;overflow-y:auto;
+  font-family:'Press Start 2P',monospace;
+}
+.intro-title{font-size:18px;color:#9bbc0f;margin-bottom:8px;letter-spacing:.06em;}
+.intro-title span{color:#8bac0f;}
+.intro-sub{font-size:9px;color:#306230;margin-bottom:20px;letter-spacing:.1em;}
+.intro-rules{
+  background:#0a2808;border:2px solid #306230;padding:14px 18px;
+  text-align:left;max-width:380px;width:100%;margin-bottom:20px;
+  font-size:9px;color:#8bac0f;line-height:2.6;
+}
+.intro-rules li{list-style:none;padding-left:14px;position:relative;}
+.intro-rules li::before{content:'>';position:absolute;left:0;color:#9bbc0f;}
+#intro-go{
+  background:#9bbc0f;color:#0f380f;border:3px solid #306230;
+  padding:14px 32px;font-family:'Press Start 2P',monospace;font-size:11px;
+  cursor:pointer;letter-spacing:.06em;
+  box-shadow:4px 4px 0 #306230;transition:all .08s;
+}
+#intro-go:active{transform:translate(2px,2px);box-shadow:2px 2px 0 #306230;}
+</style>
+</head>
+<body>
+<div id="screen">
+  <canvas id="c"></canvas>
+  <canvas id="scanlines"></canvas>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="hud-left">
+      <div id="hud-batch">BATCH: <span id="hb-n">1</span></div>
+      <div id="hud-prog"><span id="hp-n">0</span>/<span id="hp-t">0</span> ピック完了</div>
+      <div id="hud-state-msg">スキャナー長押しでピック指示確認</div>
+    </div>
+  </div>
+
+  <!-- Voice button — floats right, always on top -->
+  <button id="voice-btn"><div id="voice-ico">📢</div>どいて</button>
+
+  <!-- BGM controls — next to voice button (#12) -->
+  <button id="bgm-btn">🔇</button>
+  <input type="range" id="bgm-vol" min="0" max="100" value="50">
+
+  <!-- Scan button — floats right, always on top -->
+  <button id="scan-btn"><div id="scan-ico">📱</div>SCAN</button>
+
+  <!-- Scanner panel -->
+  <div id="sp">
+    <div class="sp-h">■ SCANNER ■</div>
+    <div id="sp-main-row">
+      <div id="sp-shape-area"><canvas id="sp-cnv" width="56" height="56"></canvas></div>
+      <div id="sp-info">
+        <div id="sp-shelf-lbl">PICK FROM:</div>
+        <div id="sp-shelf-id">------</div>
+        <div id="sp-code">----</div>
+        <div id="sp-type">--</div>
+      </div>
+    </div>
+    <div id="sp-footer">
+      <span id="sp-rem">--個残り</span>
+      <span id="sp-pg">--/--</span>
+    </div>
+  </div>
+
+  <!-- Shelf panel -->
+  <div id="shelf-panel">
+    <div id="sp-hdr">
+      <div>
+        <div id="sp-hdr-title">棚 ------</div>
+        <div id="sp-hdr-sub">-- 個の引き出し</div>
+      </div>
+      <button id="sp-hdr-back">◀ もどる</button>
+    </div>
+    <div id="sp-scan-hold-hint">スキャナー長押し → 指示確認 / ターゲット表示</div>
+    <div id="shelf-grid-wrap"><div id="shelf-grid"></div></div>
+  </div>
+
+  <!-- Drawer panel -->
+  <div id="drawer-panel">
+    <div id="dp-hdr">
+      <div>
+        <div id="dp-title">D01</div>
+        <div id="dp-shelf-lbl">棚 ------</div>
+      </div>
+      <button id="dp-back">◀ もどる</button>
+    </div>
+    <div id="dp-hint">ドラッグでごそごそ｜タップで商材を選ぶ</div>
+    <div id="dp-canvas-wrap">
+      <canvas id="dp-canvas"></canvas>
+      <div id="dp-empty">空の引き出し</div>
+    </div>
+    <!-- Permanent scanner info bar -->
+    <div id="dp-scanner-bar">
+      <canvas id="dsb-canvas" width="64" height="64"></canvas>
+      <div id="dsb-info">
+        <div id="dsb-box-lbl">スキャン指示</div>
+        <div id="dsb-box">------のBOXをスキャン</div>
+        <div id="dsb-code">---- / --</div>
+        <div id="dsb-prog">-- / --</div>
+      </div>
+    </div>
+    <!-- Stage 1: tap item → show scan button -->
+    <div id="dp-pre-scan">
+      <div id="dpc-row">
+        <canvas id="dpc-canvas" width="60" height="60" style="border:2px solid #306230;flex-shrink:0;"></canvas>
+        <div>
+          <div id="dpc-code">----</div>
+          <div id="dpc-type">--</div>
+        </div>
+      </div>
+      <button class="dpc-btn dpc-scan-btn" id="dpc-scan">📱 スキャン</button>
+    </div>
+    <!-- Stage 2: after scan → result + 2 actions -->
+    <div id="dp-confirm">
+      <div id="dpc-result-row">
+        <div id="dpc-result-icon">--</div>
+        <div id="dpc-match">--</div>
+      </div>
+      <div class="dpc-btns">
+        <button class="dpc-btn dpc-ok" id="dpc-ok">📦 コンテナへ</button>
+        <button class="dpc-btn dpc-no" id="dpc-no">↩ 引き出しに戻す</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Workflow: batch done -->
+  <div class="wf-overlay" id="wf-batch">
+    <div class="wf-icon">📦</div>
+    <div class="wf-title">バッチ完了！</div>
+    <div class="wf-sub" id="wf-batch-sub">コンテナがいっぱいになりました<br><br>回収ゾーンへ持っていって下さい</div>
+    <button class="wf-btn" id="wf-batch-go">回収ゾーンへ ▶</button>
+  </div>
+
+  <!-- Workflow: at return zone -->
+  <div class="wf-overlay" id="wf-return">
+    <div class="wf-icon">🏁</div>
+    <div class="wf-title">回収ゾーン</div>
+    <div class="wf-sub">コンテナを置きました<br><br>次は空コンテナゾーンへ</div>
+    <button class="wf-btn" id="wf-return-go">空コンテナゾーンへ ▶</button>
+  </div>
+
+  <!-- Workflow: at empty container zone -->
+  <div class="wf-overlay" id="wf-empty">
+    <div class="wf-icon">🗃️</div>
+    <div class="wf-title">空コンテナゾーン</div>
+    <div class="wf-scan-target">空コンテナをセットしました<br>スキャナーを長押ししてスキャン！</div>
+    <div class="wf-progress" id="wf-prog"><div class="wf-progress-bar" id="wf-bar"></div></div>
+    <div style="font-family:'Press Start 2P';font-size:6px;color:#306230;margin-top:4px;" id="wf-scan-msg">スキャナーボタンを長押し…</div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"><div id="toast-m"></div><div id="toast-sub"></div></div>
+
+  <!-- Bot bubble -->
+  <div id="bbub">「すみません！」</div>
+
+  <!-- Intro -->
+  <div id="intro">
+    <div style="font-size:32px;margin-bottom:12px;">📦</div>
+    <div class="intro-title">EC<span>倉庫</span><br>PICKING</div>
+    <div class="intro-sub">〜 地獄の日常 〜</div>
+    <ul class="intro-rules">
+      <li>マップをタップして移動</li>
+      <li>棚をタップ → 引き出し一覧</li>
+      <li>黄ボタン長押し → スキャナー表示</li>
+      <li>引き出しをドラッグしてごそごそ</li>
+      <li>棚は通れない！ 通路を歩く</li>
+      <li>バッチ後は回収→空コンテナ→次へ</li>
+    </ul>
+    <button id="intro-go">START GAME</button>
+    <div style="margin-top:14px;display:flex;align-items:center;gap:10px;font-family:'Press Start 2P',monospace;font-size:7px;color:#8bac0f;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="hard-mode-chk" style="width:16px;height:16px;cursor:pointer;accent-color:#9bbc0f;">
+        HARD MODE
+      </label>
+    </div>
+    <div id="hard-desc" style="font-family:'Press Start 2P',monospace;font-size:7px;color:#306230;margin-top:6px;text-align:center;line-height:2;">ハイライトなし / 商材2倍 / 充填100-150%</div>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ── ALL STATE VARIABLES DECLARED FIRST (prevent TDZ errors) ──
+let hardMode=false;
+let gameState, batch, bidx, bnum, container, t0, moveCount;
+let selItemData=null;
+let panelOpen=false, drawerOpen=false;
+let pendingShelf=null, pendingOpenShelf=null;
+let scanHoldActive=false, scanHoldTimer=null, scanProgress=0;
+let batchShelfCursor=0, batchDrawerCursor=0, batchColCursor=0;
+let currentShelf=null, currentDrawer=null, currentDrawerShelf=null;
+let _floorTiles=null;
+let running=false;
+let camX=0, camY=0, pulseTick=0;
+let physItems=[], dragIdx=-1, dragOffX=0, dragOffY=0;
+let pointerStartX=0, pointerStartY=0, isDrag=false;
+let zoneCooldown=0;
+let emptyScanAnimId=null, emptyScanProgress=0;
+let toastT=null;
+let bgmAudio=null, bgmOn=false;
+
+// ══════════════════════════════════════════════════════════════
+//  PALETTE + FONT
+// ══════════════════════════════════════════════════════════════
+const GB0='#0f380f', GB1='#306230', GB2='#8bac0f', GB3='#9bbc0f', GBbg='#9bbc0f';
+const PX='Press Start 2P'; // pixel font
+
+// ══════════════════════════════════════════════════════════════
+//  ITEM DATABASE
+// ══════════════════════════════════════════════════════════════
+const TYPE_SHAPES={
+  'ピアス':    {w:30,h:24,r:.45},   // round-ish
+  '指輪':      {w:28,h:22,r:.5},    // oval
+  'ネックレス':{w:52,h:18,r:.15},   // HORIZONTAL (was vertical)
+  '時計':      {w:46,h:32,r:.12},   // landscape watch
+  'ブレスレット':{w:44,h:20,r:.4},  // horizontal band
+  'イヤリング': {w:22,h:28,r:.35},  // slightly taller
+  'リング':    {w:26,h:26,r:.5},    // circular
+  'チャーム':  {w:30,h:20,r:.3},    // tag shape
+};
+const TYPES_NORMAL=[
+  {p:'A',type:'ピアス',      n:200},
+  {p:'B',type:'指輪',        n:200},
+  {p:'C',type:'ネックレス',  n:100},
+  {p:'D',type:'時計',        n:100},
+  {p:'E',type:'ブレスレット',n:100},
+  {p:'F',type:'イヤリング',  n:100},
+  {p:'G',type:'リング',      n:100},
+  {p:'H',type:'チャーム',    n:100},
+];
+const TYPES_HARD=[
+  {p:'A',type:'ピアス',      n:300},
+  {p:'B',type:'指輪',        n:300},
+  {p:'C',type:'ネックレス',  n:200},
+  {p:'D',type:'時計',        n:200},
+  {p:'E',type:'ブレスレット',n:200},
+  {p:'F',type:'イヤリング',  n:200},
+  {p:'G',type:'リング',      n:200},
+  {p:'H',type:'チャーム',    n:200},
+];
+const DB={}, ALL_CODES=[];
+function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),16777619)>>>0;return h;}
+function itemColor(code){
+  const h=hashStr(code);
+  const hue=h%360;
+  const sat=55+(h>>8)%30;
+  const lit=38+(h>>16)%24;
+  return`hsl(${hue},${sat}%,${lit}%)`;
+}
+function itemTextColor(code){
+  const h=hashStr(code);
+  const lit=38+(h>>16)%24;
+  return lit>50?'rgba(0,0,0,0.8)':'rgba(255,255,255,0.85)';
+}
+function buildDB(types){
+  for(const k in DB)delete DB[k];
+  ALL_CODES.length=0;
+  for(const {p,type,n} of types){
+    for(let i=0;i<n;i++){
+      const code=p+String(i).padStart(3,'0');
+      DB[code]={code,type,shape:TYPE_SHAPES[type],color:itemColor(code),textCol:itemTextColor(code)};
+      ALL_CODES.push(code);
+    }
+  }
+}
+buildDB(TYPES_NORMAL); // default; rebuilt on game start
+
+// ══════════════════════════════════════════════════════════════
+//  MAP SETUP
+// ══════════════════════════════════════════════════════════════
+// Layout: rows = shelf letter pairs (A/B, C/D, E/F, I/J), cols = 1000-1800
+// Between each pair: 2-tile aisle
+// Row 0: top entrance aisle
+// Row 17: special zones (return, entrance, empty container)
+
+const T=52; // tile px
+const MCOLS=11, MROWS=18;
+const FLOOR=0, SHELF=2, RETURN_ZONE=3, EMPTY_ZONE=4, ENTRANCE=5;
+
+// shelf letter → map row
+const ROW_CFG=[
+  [1,'A'],[2,'B'],
+  [5,'C'],[6,'D'],
+  [9,'E'],[10,'F'],
+  [13,'I'],[14,'J'],
+];
+// shelf col idx (1-9) → col number
+const COL_NUMS=[1000,1100,1200,1300,1400,1500,1600,1700,1800];
+const ROW_LTR={}; // mapRow -> letter
+const ROW_LTR_SET=new Set();
+for(const [r,l] of ROW_CFG){ROW_LTR[r]=l;ROW_LTR_SET.add(r);}
+
+const map=Array.from({length:MROWS},()=>new Uint8Array(MCOLS));
+// Place shelves
+for(const [r] of ROW_CFG) for(let c=1;c<=9;c++) map[r][c]=SHELF;
+// Special zone row (row 16-17)
+for(let c=1;c<=3;c++) map[16][c]=RETURN_ZONE;
+for(let c=4;c<=6;c++) map[16][c]=ENTRANCE;
+for(let c=7;c<=9;c++) map[16][c]=EMPTY_ZONE;
+
+const SMAP={};
+const ITEM_IDX={};
+const ALL_SHELVES=[];
+
+function rri(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
+function rrc(a){return a[Math.floor(Math.random()*a.length)];}
+
+function mkDrawers(shelfId){
+  const prefix = shelfId.match(/^[A-Z]+/)[0];
+  const baseNum = parseInt(shelfId.match(/\d+/)[0]);
+  const fillMax = hardMode ? 1.5 : 1.35;
+  const fillMin = hardMode ? 1.0 : 0.0;
+  return Array.from({length:40},(_,i)=>{
+    const fill=fillMin+Math.random()*(fillMax-fillMin);
+    const cnt=Math.min(18,Math.floor(fill*14));
+    const items=[];
+    if(cnt>0){const dom=rrc(ALL_CODES);for(let j=0;j<cnt;j++)items.push(Math.random()<.62?dom:rrc(ALL_CODES));}
+    const boxNum = baseNum + i + 1;
+    const label  = `${prefix}${boxNum}`;
+    return{id:i, label, items:[...items]};
+  });
+}
+
+function reinitShelves(){
+  // Clear previous data
+  for(const k in SMAP)delete SMAP[k];
+  for(const k in ITEM_IDX)delete ITEM_IDX[k];
+  ALL_SHELVES.length=0;
+  for(const [r,ltr] of ROW_CFG){
+    for(let c=1;c<=9;c++){
+      const colNum=COL_NUMS[c-1];
+      const id=`${ltr}${colNum}`;
+      const drawers=mkDrawers(id);
+      const shelf={id,row:r,col:c,ltr,colNum,drawers};
+      SMAP[`${r},${c}`]=shelf;
+      ALL_SHELVES.push(shelf);
+      for(const dr of drawers)for(const code of dr.items){
+        if(!ITEM_IDX[code])ITEM_IDX[code]=[];
+        ITEM_IDX[code].push({shelf,drawerId:dr.id});
+      }
+    }
+  }
+  _floorTiles=null; // reset cache
+}
+reinitShelves(); // initial build
+
+// Access row: which row to walk to to access a shelf
+function accessRow(r){
+  const idx=ROW_CFG.findIndex(([mr])=>mr===r);
+  // even index = north shelf (access from r-1), odd = south (access from r+1)
+  return idx%2===0 ? r-1 : r+1;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  GAME STATE
+// ══════════════════════════════════════════════════════════════
+const GS={PICKING:'p',BATCH_DONE:'bd',RETURNING:'ret',DEPOSITED:'dep',GETTING_EMPTY:'ge',SCANNING_EMPTY:'se'};
+gameState=GS.PICKING;
+// hardMode declared at top of script
+batch=[],bidx=0,bnum=1,container=[],t0=0,moveCount=0;
+selItemData=null;
+panelOpen=false, drawerOpen=false;
+pendingShelf=null, pendingOpenShelf=null;
+scanHoldActive=false, scanHoldTimer=null, scanProgress=0;
+
+// Shelf letter order for batch progression (A→J loop)
+const SHELF_ORDER=['A','B','C','D','E','F','I','J'];
+batchShelfCursor=0;
+batchDrawerCursor=0; // tracks which drawer index within current shelf (0-39)
+batchColCursor=0;    // tracks which column (0-8 = 1000-1800)
+
+function mkBatch(){
+  const size=rri(10,16);
+  const items=[];
+  for(let i=0;i<size;i++){
+    const ltr=SHELF_ORDER[batchShelfCursor%SHELF_ORDER.length];
+    // Find shelf at current column cursor
+    const colIdx=batchColCursor%9; // 0-8
+    const targetShelf=ALL_SHELVES.find(s=>s.ltr===ltr&&s.col===colIdx+1);
+    let code=null;
+    if(targetShelf){
+      // Try drawers starting from batchDrawerCursor
+      for(let attempt=0;attempt<40;attempt++){
+        const drIdx=(batchDrawerCursor+attempt)%40;
+        const dr=targetShelf.drawers[drIdx];
+        if(dr&&dr.items.length>0){code=rrc(dr.items);break;}
+      }
+    }
+    if(!code){
+      // fallback: any shelf of this letter
+      const shelvesForLtr=ALL_SHELVES.filter(s=>s.ltr===ltr);
+      for(let t=0;t<30&&!code;t++){
+        const sh=rrc(shelvesForLtr);
+        const dr=rrc(sh.drawers);
+        if(dr.items.length>0) code=rrc(dr.items);
+      }
+    }
+    if(!code) code=rrc(ALL_CODES);
+    items.push(code);
+    // Advance drawer cursor after each pick
+    batchDrawerCursor=(batchDrawerCursor+rri(1,5))%40;
+  }
+  return items;
+}
+
+function advanceBatchCursors(){
+  // Move column forward; wrap to next shelf letter when col done
+  batchColCursor++;
+  if(batchColCursor%9===0){
+    batchShelfCursor=(batchShelfCursor+1)%SHELF_ORDER.length;
+  }
+}
+
+// ── Player ──
+const P={x:4.5*T,y:15.5*T,tx:null,ty:null,spd:4.0,face:1,hasCart:true};
+
+// ── Bots ──
+const bots=[];
+const BOT_SPECS=[
+  {e:1,spd:3.5,cart:true,n:3},
+  {e:2,spd:4.5,cart:false,n:2},
+];
+function floorTiles(){
+  const tiles=[];
+  for(let r=0;r<MROWS;r++)for(let c=0;c<MCOLS;c++)if(map[r][c]!==SHELF)tiles.push({r,c});
+  return tiles;
+}
+_floorTiles=null;
+function initBots(){
+  _floorTiles=floorTiles();
+  bots.length=0;
+  for(const {e,spd,cart,n} of BOT_SPECS) for(let i=0;i<n;i++){
+    const t=rrc(_floorTiles);
+    bots.push({e,spd,cart,x:t.c*T+T/2,y:t.r*T+T/2,tx:null,ty:null,timer:rri(60,180),face:1});
+  }
+}
+
+// Bots move tile-to-tile like player (#9)
+function botPickTarget(b){
+  const t=rrc(_floorTiles||floorTiles());
+  b.tx=t.c*T+T/2; b.ty=t.r*T+T/2;
+  b.timer=rri(80,220);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  COLLISION
+// ══════════════════════════════════════════════════════════════
+const CR=T*.3;
+const BOT_COLL_R=T*.38; // bot collision radius
+function blocked(x,y,checkBots=false){
+  const r2=CR*.8;
+  for(const[dx,dy] of[[-r2,-r2],[-r2,r2],[r2,-r2],[r2,r2],[0,-r2],[0,r2],[-r2,0],[r2,0]]){
+    const tc=Math.floor((x+dx)/T),tr=Math.floor((y+dy)/T);
+    if(tc<0||tc>=MCOLS||tr<0||tr>=MROWS||map[tr][tc]===SHELF)return true;
+  }
+  // Bot collision — only for player movement
+  if(checkBots){
+    for(const b of bots){
+      if(Math.hypot(x-b.x,y-b.y)<BOT_COLL_R) return true;
+    }
+  }
+  return false;
+}
+function moveEnt(e,isBotMoving=false){
+  if(e.tx===null)return false;
+  const dx=e.tx-e.x,dy=e.ty-e.y,d=Math.hypot(dx,dy);
+  if(d<=e.spd){e.x=e.tx;e.y=e.ty;e.tx=null;e.ty=null;return true;}
+  if(dx!==0)e.face=dx>0?1:-1;
+  const nx=e.x+dx/d*e.spd,ny=e.y+dy/d*e.spd;
+  const chkBots=!isBotMoving; // player checks bots, bots don't check bots
+  if(!blocked(nx,ny,chkBots)){e.x=nx;e.y=ny;}
+  else if(!blocked(nx,e.y,chkBots))e.x=nx;
+  else if(!blocked(e.x,ny,chkBots))e.y=ny;
+  else{e.tx=null;e.ty=null;return true;}
+  return false;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  PIXEL ART SPRITES  (11w × 11h for more detail)
+// ══════════════════════════════════════════════════════════════
+const PX_SIZE=4;
+// Player: person pushing cart (facing right by default)
+// Cart is drawn AT the front (right side) of the character
+const SPR_PLAYER=[ // 9w x 10h
+  [0,0,0,1,1,1,0,0,0],
+  [0,0,1,3,3,3,1,0,0],
+  [0,0,1,3,2,3,1,0,0],
+  [0,0,0,1,1,1,0,0,0],
+  [0,1,2,2,2,1,0,0,0],
+  [0,1,3,2,3,1,1,2,1],  // arms reaching forward
+  [0,1,2,2,2,1,2,2,1],
+  [0,0,1,0,1,0,0,0,0],
+  [0,0,1,0,1,0,0,0,0],
+];
+// Cart sprite (pushed in front of player)
+const SPR_CART=[  // 7w x 7h — taller box shape
+  [0,1,1,1,1,1,0],
+  [1,2,3,3,3,2,1],
+  [1,2,3,3,3,2,1],
+  [1,2,2,2,2,2,1],
+  [1,1,1,1,1,1,1],
+  [0,0,1,0,1,0,0],
+  [0,0,1,0,1,0,0],
+];
+// Restock bot: boxy robot pushing cart
+const SPR_BOT1=[  // 9w x 10h
+  [0,1,1,1,1,1,0,0,0],
+  [1,2,1,1,1,2,1,0,0],
+  [1,2,3,1,3,2,1,0,0],
+  [1,1,1,1,1,1,1,0,0],
+  [0,1,2,2,2,1,0,0,0],
+  [1,1,2,1,2,1,1,2,1],
+  [0,1,1,0,1,1,2,2,1],
+  [0,0,1,0,1,0,0,0,0],
+  [0,0,1,0,1,0,0,0,0],
+];
+// Picker bot: smaller agile bot
+const SPR_BOT2=[  // 7w x 9h
+  [0,1,1,1,1,1,0],
+  [1,1,1,1,1,1,1],
+  [0,1,3,2,3,1,0],
+  [0,0,1,1,1,0,0],
+  [0,1,2,1,2,1,0],
+  [1,1,2,2,2,1,1],
+  [0,1,2,1,2,1,0],
+  [0,0,1,0,1,0,0],
+  [0,0,1,0,1,0,0],
+];
+const GB_PAL=[GB0,GB1,GB2,GB3];
+function drawSprite(ctx,spr,x,y,flipH=false){
+  const cols=spr[0].length,rows=spr.length;
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const v=spr[r][flipH?cols-1-c:c];
+      if(v===0)continue;
+      ctx.fillStyle=GB_PAL[v-1];
+      ctx.fillRect(x+c*PX_SIZE,y+r*PX_SIZE,PX_SIZE,PX_SIZE);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  DRAW ITEM SHAPE — full color, crisp (no blur)
+// ══════════════════════════════════════════════════════════════
+// size = the actual canvas pixel size (cv.width = cv.height = size for square canvases)
+function drawItemShape(cv,code,size){
+  // Always set intrinsic canvas size = display size to avoid scaling blur
+  const s=size||cv.width;
+  cv.width=s; cv.height=s;
+  const c2=cv.getContext('2d');
+  c2.clearRect(0,0,s,s);
+  if(!code||!DB[code])return;
+  const item=DB[code];
+  const sh=item.shape;
+  // Scale shape proportionally to fit canvas with padding
+  const pad=s*.1;
+  const maxW=s-pad*2, maxH=s-pad*2;
+  // base dims
+  const bw=sh.w, bh=sh.h;
+  const scale=Math.min(maxW/bw, maxH/bh);
+  const w=bw*scale, h=bh*scale;
+  const x=(s-w)/2, y=(s-h)/2;
+  const r=sh.r*Math.min(w,h);
+  // Shadow
+  c2.fillStyle='rgba(0,0,0,0.25)';
+  c2.beginPath();c2.roundRect(x+2,y+2,w,h,r);c2.fill();
+  // Body with full color
+  c2.fillStyle=item.color;
+  c2.beginPath();c2.roundRect(x,y,w,h,r);c2.fill();
+  // Highlight stripe
+  c2.fillStyle='rgba(255,255,255,0.22)';
+  c2.beginPath();c2.roundRect(x+2,y+2,w-4,h*.35,r*.6);c2.fill();
+  // Border
+  c2.strokeStyle='rgba(255,255,255,0.35)';c2.lineWidth=1.5;
+  c2.beginPath();c2.roundRect(x,y,w,h,r);c2.stroke();
+  // Code text
+  const fs=Math.max(6,Math.floor(s*.13));
+  c2.fillStyle=item.textCol;
+  c2.font=`bold ${fs}px '${PX}',monospace`;
+  c2.textAlign='center';c2.textBaseline='middle';
+  c2.fillText(code,s/2,s/2);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  MAP RENDERING
+// ══════════════════════════════════════════════════════════════
+const cv=document.getElementById('c');
+const ctx=cv.getContext('2d');
+ctx.imageSmoothingEnabled=false;
+camX=0,camY=0,pulseTick=0;
+
+function renderMap(){
+  pulseTick+=0.05;
+  const W=cv.width,H=cv.height;
+  const hudH=document.getElementById('hud').offsetHeight||68;
+  const viewH=H-hudH;
+
+  // Smooth camera follow
+  const tcx=P.x-W/2,tcy=P.y-viewH/2;
+  camX+=(tcx-camX)*.12;camY+=(tcy-camY)*.12;
+  camX=Math.max(0,Math.min(MCOLS*T-W,camX));
+  camY=Math.max(0,Math.min(MROWS*T-viewH,camY));
+
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle=GBbg;ctx.fillRect(0,0,W,viewH);
+
+  ctx.save();ctx.translate(-camX|0,-camY|0);
+
+  const tc=bidx<batch.length?batch[bidx]:null;
+
+  for(let r=0;r<MROWS;r++){
+    for(let c=0;c<MCOLS;c++){
+      const x=c*T,y=r*T,t=map[r][c];
+
+      if(t===SHELF){
+        const shelf=SMAP[`${r},${c}`];
+        // Shelf body
+        ctx.fillStyle=GB1;ctx.fillRect(x,y,T,T);
+        // Shelf horizontal dividers (3 lines = looks like drawers)
+        ctx.fillStyle=GB0;
+        ctx.fillRect(x,y,T,2);
+        for(let i=1;i<4;i++){ctx.fillStyle=GB0;ctx.fillRect(x,y+i*(T/4),T,2);}
+        ctx.fillRect(x,y+T-2,T,2);
+        ctx.fillRect(x,y,2,T);ctx.fillRect(x+T-2,y,2,T);
+
+        // Front edge highlight
+        ctx.fillStyle=GB2;ctx.fillRect(x+2,y+2,T-4,2);
+
+        if(shelf){
+          // Letter (big)
+          ctx.fillStyle=GB3;
+          ctx.font=`900 ${T*.42|0}px '${PX}'`;
+          ctx.textAlign='center';ctx.textBaseline='middle';
+          ctx.fillText(shelf.ltr,x+T/2,y+T*.33);
+          // Number (small below)
+          ctx.fillStyle=GB2;
+          ctx.font=`${T*.16|0}px '${PX}'`;
+          ctx.fillText(shelf.colNum,x+T/2,y+T*.72);
+
+          // Target highlight — only the exact shelf containing the scanner's BOX
+          // Hidden in hard mode (even with scanner held)
+          if(tc&&!hardMode){
+            const targetBox=getTargetBoxLabel();
+            const isTargetShelf = targetBox &&
+              shelf.drawers.some(dr=>dr.label===targetBox);
+            if(isTargetShelf){
+              const a=.28+.18*Math.sin(pulseTick*3);
+              ctx.fillStyle=`rgba(155,188,15,${a})`;ctx.fillRect(x,y,T,T);
+              ctx.strokeStyle=GB3;ctx.lineWidth=3;
+              ctx.strokeRect(x+2,y+2,T-4,T-4);
+              ctx.fillStyle=GB3;
+              ctx.font=`${T*.22|0}px serif`;
+              ctx.textAlign='center';ctx.textBaseline='top';
+              ctx.fillText('▼',x+T/2,y+2);
+            }
+          }
+        }
+      } else {
+        // Floor — all same color (#10: no special aisle colors for left/right walls)
+        let fc=GBbg;
+        if(t===RETURN_ZONE) fc='#7a9c08';
+        else if(t===EMPTY_ZONE) fc='#6e8c07';
+        else if(t===ENTRANCE) fc='#8bac0f';
+        ctx.fillStyle=fc;ctx.fillRect(x,y,T,T);
+
+        // Floor dot pattern
+        ctx.fillStyle='rgba(15,56,15,.12)';
+        for(let dy=8;dy<T;dy+=16)for(let dx=8;dx<T;dx+=16)
+          ctx.fillRect(x+dx,y+dy,2,2);
+
+        // Zone labels
+        if(t===RETURN_ZONE){
+          ctx.fillStyle=GB0;ctx.font=`${T*.14|0}px '${PX}'`;
+          ctx.textAlign='center';ctx.textBaseline='middle';
+          ctx.fillText('回収',x+T/2,y+T*.35);ctx.fillText('ゾーン',x+T/2,y+T*.65);
+        }else if(t===EMPTY_ZONE){
+          ctx.fillStyle=GB0;ctx.font=`${T*.14|0}px '${PX}'`;
+          ctx.textAlign='center';ctx.textBaseline='middle';
+          ctx.fillText('空コンテナ',x+T/2,y+T*.35);ctx.fillText('ゾーン',x+T/2,y+T*.65);
+        }else if(t===ENTRANCE){
+          ctx.fillStyle=GB1;ctx.font=`${T*.12|0}px '${PX}'`;
+          ctx.textAlign='center';ctx.textBaseline='middle';
+          ctx.fillText('出入口',x+T/2,y+T/2);
+        }
+        // Row letter on left aisle (col 0)
+        if(c===0&&ROW_LTR[r]){
+          ctx.fillStyle=GB1;ctx.font=`700 ${T*.22|0}px '${PX}'`;
+          ctx.textAlign='center';ctx.textBaseline='middle';
+          ctx.fillText(ROW_LTR[r],x+T/2,y+T/2);
+        }
+        // Col numbers on top aisle (row 0)
+        if(r===0&&c>=1&&c<=9){
+          ctx.fillStyle=GB1;ctx.font=`${T*.15|0}px '${PX}'`;
+          ctx.textAlign='center';ctx.textBaseline='middle';
+          ctx.fillText(COL_NUMS[c-1],x+T/2,y+T/2);
+        }
+      }
+    }
+  }
+
+  // Bots
+  for(const b of bots){
+    const spr=b.e===1?SPR_BOT1:SPR_BOT2;
+    const sw=spr[0].length*PX_SIZE, sh=spr.length*PX_SIZE;
+    const bx=b.x-sw/2, by=b.y-sh;
+    drawSprite(ctx,spr,bx,by,b.face<0);
+    if(b.cart){
+      // Cart drawn in front of bot
+      const cw=SPR_CART[0].length*PX_SIZE, ch=SPR_CART.length*PX_SIZE;
+      const cartX=b.face>0 ? b.x+sw/2-4 : b.x-sw/2-cw+4;
+      drawSprite(ctx,SPR_CART,cartX,b.y-ch,false);
+    }
+  }
+
+  // Player move indicator
+  if(P.tx!==null){
+    ctx.strokeStyle=GB1;ctx.lineWidth=1;ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.moveTo(P.x,P.y);ctx.lineTo(P.tx,P.ty);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle=GB1;
+    ctx.beginPath();ctx.arc(P.tx,P.ty,5,0,Math.PI*2);ctx.fill();
+  }
+
+  // Player shadow
+  ctx.fillStyle='rgba(15,56,15,.25)';
+  for(let i=-12;i<=12;i+=4)ctx.fillRect(P.x+i-2,P.y+2,4,4);
+
+  // Player sprite + cart (#2)
+  const pw=SPR_PLAYER[0].length*PX_SIZE, ph=SPR_PLAYER.length*PX_SIZE;
+  const px=P.x-pw/2, py=P.y-ph;
+  drawSprite(ctx,SPR_PLAYER,px,py,P.face<0);
+  if(P.hasCart){
+    const cw=SPR_CART[0].length*PX_SIZE, ch=SPR_CART.length*PX_SIZE;
+    const cartX=P.face>0 ? P.x+pw/2-4 : P.x-pw/2-cw+4;
+    drawSprite(ctx,SPR_CART,cartX,P.y-ch,false);
+  }
+
+  ctx.restore();
+}
+
+// Scanlines canvas (static, drawn once)
+function initScanlines(){
+  const sc=document.getElementById('scanlines');
+  sc.width=window.innerWidth; sc.height=window.innerHeight;
+  const c2=sc.getContext('2d');
+  for(let y=0;y<sc.height;y+=3){
+    c2.fillStyle='rgba(15,56,15,.07)';c2.fillRect(0,y,sc.width,1);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  GAME LOOP
+// ══════════════════════════════════════════════════════════════
+running=false;
+function loop(){
+  if(!running)return;
+  // Move player
+  const arr=moveEnt(P);
+  if(arr&&pendingShelf){openShelfPanel(pendingShelf);pendingShelf=null;}
+  // Check zone triggers
+  if(!panelOpen&&!drawerOpen)checkZoneTrigger();
+  // Bots — tile-based movement like player
+  for(const b of bots){
+    b.timer--;
+    const ba=moveEnt(b,true);
+    if(ba||b.timer<=0||!b.tx) botPickTarget(b);
+  }
+  if(!panelOpen&&!drawerOpen)renderMap();
+  if(drawerOpen)renderDrawerCanvas();
+  requestAnimationFrame(loop);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  ZONE TRIGGER
+// ══════════════════════════════════════════════════════════════
+zoneCooldown=0;
+function checkZoneTrigger(){
+  if(zoneCooldown>0){zoneCooldown--;return;}
+  const tr=Math.floor(P.y/T),tc=Math.floor(P.x/T);
+  if(tr<0||tr>=MROWS||tc<0||tc>=MCOLS)return;
+  const t=map[tr][tc];
+  if(t===RETURN_ZONE&&gameState===GS.RETURNING){
+    gameState=GS.DEPOSITED;zoneCooldown=120;
+    show('wf-return');
+  }
+  if(t===EMPTY_ZONE&&gameState===GS.DEPOSITED){
+    gameState=GS.GETTING_EMPTY;zoneCooldown=120;
+    show('wf-empty');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  INPUT — MAP CANVAS
+// ══════════════════════════════════════════════════════════════
+function worldPos(cx,cy){
+  const rc=cv.getBoundingClientRect();
+  return{wx:(cx-rc.left)*(cv.width/rc.width)+camX,wy:(cy-rc.top)*(cv.height/rc.height)+camY};
+}
+cv.addEventListener('click',e=>{
+  if(panelOpen||drawerOpen)return;
+  const{wx,wy}=worldPos(e.clientX,e.clientY);
+  const tc=Math.floor(wx/T),tr=Math.floor(wy/T);
+  if(tr<0||tr>=MROWS||tc<0||tc>=MCOLS)return;
+  if(map[tr][tc]===SHELF){
+    const shelf=SMAP[`${tr},${tc}`];if(!shelf)return;
+    const ar=accessRow(tr);
+    const atx=tc*T+T/2,aty=ar*T+T/2;
+    const pr=Math.floor(P.y/T),pc=Math.floor(P.x/T);
+    if(pr===ar&&pc===tc){openShelfPanel(shelf);}
+    else if(!blocked(atx,aty,false)){P.tx=atx;P.ty=aty;pendingShelf=shelf;moveCount++;}
+    return;
+  }
+  const tx=tc*T+T/2,ty=tr*T+T/2;
+  if(!blocked(tx,ty,false)){P.tx=tx;P.ty=ty;pendingShelf=null;moveCount++;}
+});
+cv.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  const t=e.touches[0];
+  cv.dispatchEvent(new MouseEvent('click',{clientX:t.clientX,clientY:t.clientY}));
+},{passive:false});
+
+// ══════════════════════════════════════════════════════════════
+//  SCANNER HOLD BUTTON
+// ══════════════════════════════════════════════════════════════
+const scanBtn=document.getElementById('scan-btn');
+const spEl=document.getElementById('sp');
+
+function startScan(){
+  scanHoldActive=true;
+  scanBtn.classList.add('held');
+  if(gameState===GS.GETTING_EMPTY){startEmptyContainerScan();return;}
+  refreshScannerPanel();
+  if(!drawerOpen){
+    // #7: in shelf panel, position scanner above or below based on target drawer visibility
+    if(panelOpen){
+      const targetBox=getTargetBoxLabel();
+      const targetBtn=targetBox?document.querySelector(`#shelf-grid .dr-btn[data-did]`):null;
+      // Check if target is in lower or upper half of grid
+      const gridWrap=document.getElementById('shelf-grid-wrap');
+      const gridRect=gridWrap.getBoundingClientRect();
+      const screenMid=gridRect.top+gridRect.height/2;
+      // Find target btn position
+      let targetInBottom=true;
+      if(targetBox){
+        const allBtns=document.querySelectorAll('#shelf-grid .dr-btn');
+        allBtns.forEach(btn=>{
+          const dr=currentShelf&&currentShelf.drawers[parseInt(btn.dataset.did)];
+          if(dr&&dr.label===targetBox){
+            const rect=btn.getBoundingClientRect();
+            targetInBottom=(rect.top+rect.height/2)>screenMid;
+          }
+        });
+      }
+      // Place scanner at top if target is in bottom half
+      if(targetInBottom){
+        spEl.style.bottom='auto';
+        spEl.style.top='80px';
+      }else{
+        spEl.style.bottom=`calc(88px + env(safe-area-inset-bottom))`;
+        spEl.style.top='auto';
+      }
+    }else{
+      spEl.style.bottom=`calc(88px + env(safe-area-inset-bottom))`;
+      spEl.style.top='auto';
+    }
+    spEl.classList.add('show');
+  }
+  if(panelOpen&&!hardMode) refreshShelfPanelHighlights(true);
+}
+function endScan(){
+  scanHoldActive=false;
+  scanBtn.classList.remove('held');
+  spEl.classList.remove('show');
+  if(panelOpen) refreshShelfPanelHighlights(false);
+  if(gameState===GS.SCANNING_EMPTY){
+    gameState=GS.GETTING_EMPTY;
+    cancelEmptyContainerScan();
+  }
+}
+scanBtn.addEventListener('mousedown',startScan);
+scanBtn.addEventListener('mouseup',endScan);
+scanBtn.addEventListener('mouseleave',endScan);
+scanBtn.addEventListener('touchstart',e=>{e.preventDefault();startScan();},{passive:false});
+scanBtn.addEventListener('touchend',endScan);
+
+function refreshScannerPanel(){
+  if(gameState===GS.BATCH_DONE||gameState===GS.RETURNING||gameState===GS.DEPOSITED){
+    document.getElementById('sp-shelf-id').textContent='回収ゾーンへ';
+    document.getElementById('sp-code').textContent='コンテナ';
+    document.getElementById('sp-type').textContent='持っていって！';
+    document.getElementById('sp-rem').textContent='--';document.getElementById('sp-pg').textContent='--/--';
+    return;
+  }
+  if(gameState===GS.GETTING_EMPTY||gameState===GS.SCANNING_EMPTY){
+    document.getElementById('sp-shelf-id').textContent='空コンテナゾーン';
+    document.getElementById('sp-code').textContent='空コンテナ';
+    document.getElementById('sp-type').textContent='長押しでスキャン！';
+    document.getElementById('sp-rem').textContent='--';document.getElementById('sp-pg').textContent='--/--';
+    return;
+  }
+  if(bidx>=batch.length){
+    document.getElementById('sp-shelf-id').textContent='完了！';
+    return;
+  }
+  const code=batch[bidx],item=DB[code];
+  // Find the specific BOX (drawer) label that contains the target
+  const locs=ITEM_IDX[code]||[];
+  let boxLabel='??????';
+  if(locs.length){
+    // Pick the first matching drawer label
+    const loc=locs[0];
+    const drawer=loc.shelf.drawers[loc.drawerId];
+    boxLabel=drawer?drawer.label:loc.shelf.id;
+  }
+  document.getElementById('sp-shelf-id').textContent=`${boxLabel}のBOXを`;
+  document.getElementById('sp-code').textContent=code;
+  document.getElementById('sp-type').textContent=item.type;
+  document.getElementById('sp-rem').textContent=`${batch.length-bidx}個残り`;
+  document.getElementById('sp-pg').textContent=`${bidx+1}/${batch.length}`;
+  drawItemShape(document.getElementById('sp-cnv'),code,56);
+}
+
+// Get the exact drawer label shown in scanner for current target
+function getTargetBoxLabel(){
+  if(bidx>=batch.length) return null;
+  const code=batch[bidx];
+  const locs=ITEM_IDX[code]||[];
+  if(!locs.length) return null;
+  const drawer=locs[0].shelf.drawers[locs[0].drawerId];
+  return drawer?drawer.label:null;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  SHELF PANEL
+// ══════════════════════════════════════════════════════════════
+currentShelf=null;
+function openShelfPanel(shelf){
+  panelOpen=true;currentShelf=shelf;
+  document.getElementById('sp-hdr-title').textContent=`棚 ${shelf.id}`;
+  document.getElementById('sp-hdr-sub').textContent='';
+  document.getElementById('voice-btn').style.display='none'; // #6
+  buildShelfGrid(shelf);
+  show('shelf-panel');
+}
+function buildShelfGrid(shelf){
+  const targetBox=getTargetBoxLabel();
+  const grid=document.getElementById('shelf-grid');
+  grid.innerHTML='';
+  for(const dr of shelf.drawers){
+    const isExactTarget=(dr.label===targetBox);
+    const btn=document.createElement('div');
+    btn.className='dr-btn';
+    btn.dataset.did=dr.id;
+    if(isExactTarget&&scanHoldActive&&!hardMode) btn.classList.add('target-glow');
+    // #8: small count on top, big label on bottom
+    btn.innerHTML=`
+      <div class="dr-count-bar">${dr.items.length}こ</div>
+      <div class="dr-label-bar">${dr.label}</div>`;
+    btn.addEventListener('click',()=>openDrawerPanel(dr,shelf));
+    grid.appendChild(btn);
+  }
+}
+function refreshShelfPanelHighlights(glow){
+  if(!currentShelf) return;
+  if(hardMode){return;} // #4: no highlight in hard mode
+  const targetBox=getTargetBoxLabel();
+  document.querySelectorAll('#shelf-grid .dr-btn').forEach(btn=>{
+    const did=parseInt(btn.dataset.did);
+    const dr=currentShelf.drawers[did];
+    const isExact=(dr&&dr.label===targetBox);
+    if(glow&&isExact) btn.classList.add('target-glow');
+    else btn.classList.remove('target-glow');
+  });
+}
+document.getElementById('sp-hdr-back').onclick=()=>{
+  hide('shelf-panel');panelOpen=false;currentShelf=null;pendingShelf=null;
+  document.getElementById('voice-btn').style.display=''; // #6: restore
+};
+
+// ══════════════════════════════════════════════════════════════
+//  DRAWER PANEL — PHYSICS CANVAS
+// ══════════════════════════════════════════════════════════════
+const dpCv=document.getElementById('dp-canvas');
+const dpCtx=dpCv.getContext('2d');
+dpCtx.imageSmoothingEnabled=false;
+physItems=[],dragIdx=-1,dragOffX=0,dragOffY=0;
+pointerStartX=0,pointerStartY=0,isDrag=false;
+currentDrawer=null,currentDrawerShelf=null;
+
+const ITEM_W=40,ITEM_H=40; // base size for physics items
+
+function updateDrawerScannerBar(){
+  const code=bidx<batch.length?batch[bidx]:null;
+  const boxLabel=getTargetBoxLabel()||'------';
+  document.getElementById('dsb-box').textContent=`${boxLabel}のBOXをスキャン`;
+  if(code&&DB[code]){
+    const item=DB[code];
+    document.getElementById('dsb-code').textContent=`${code} ／ ${item.type}`;
+    drawItemShape(document.getElementById('dsb-canvas'),code,64); // #4: larger
+  }else{
+    document.getElementById('dsb-code').textContent='----';
+  }
+  document.getElementById('dsb-prog').textContent=
+    `${bidx+1} / ${batch.length}  残り${batch.length-bidx}個`;
+}
+
+function openDrawerPanel(dr,shelf){
+  drawerOpen=true;currentDrawer=dr;currentDrawerShelf=shelf;
+  document.getElementById('dp-title').textContent=dr.label;
+  document.getElementById('dp-shelf-lbl').textContent=`棚 ${shelf.id}`;
+  hide('dp-confirm');hide('dp-pre-scan');hide('dp-empty');
+  hide('shelf-panel');panelOpen=false;
+  document.getElementById('scan-btn').style.display='none';
+  document.getElementById('voice-btn').style.display='none'; // #6
+  updateDrawerScannerBar();
+  show('drawer-panel');
+  requestAnimationFrame(()=>{
+    const wrap=document.getElementById('dp-canvas-wrap');
+    const wW=Math.max(wrap.clientWidth,window.innerWidth);
+    const wH=Math.max(wrap.clientHeight,200);
+    dpCv.width=wW;dpCv.height=wH;
+    dpCv.style.width=wW+'px';dpCv.style.height=wH+'px';
+    initPhysItems(dr,wW,wH);
+    if(dr.items.length===0)show('dp-empty');
+  });
+}
+
+function initPhysItems(dr,W,H){
+  physItems=[];
+  const codes=dr.items;
+  for(let i=0;i<codes.length;i++){
+    const code=codes[i];
+    const item=DB[code];
+    if(!item)continue;
+    const sh=item.shape;
+    // Scale shape to be nicely visible in the drawer
+    const baseMax=Math.min(W,H)*.18;
+    const scale=baseMax/Math.max(sh.w,sh.h);
+    const iw=sh.w*scale*1.1, ih=sh.h*scale*1.1;
+    const margin=Math.max(iw,ih)/2+6;
+    physItems.push({
+      code,
+      color:item.color,
+      textCol:item.textCol,
+      shape:sh,
+      x:margin+Math.random()*(W-2*margin),
+      y:margin+Math.random()*(H-2*margin),
+      rot:(Math.random()-.5)*Math.PI*.75,
+      vx:(Math.random()-.5)*2,
+      vy:(Math.random()-.5)*2,
+      vrot:(Math.random()-.5)*.08,
+      z:i,
+      iw, ih,
+      dragging:false,
+    });
+  }
+}
+
+function renderDrawerCanvas(){
+  const W=dpCv.width,H=dpCv.height;
+  dpCtx.clearRect(0,0,W,H);
+  if(W===0||H===0)return;
+
+  // Drawer interior: dark wood-ish
+  dpCtx.fillStyle='#2a1e12';dpCtx.fillRect(0,0,W,H);
+  // Wood grain
+  dpCtx.strokeStyle='rgba(255,255,255,.04)';dpCtx.lineWidth=1;
+  for(let y=0;y<H;y+=10){
+    dpCtx.beginPath();dpCtx.moveTo(0,y);dpCtx.lineTo(W,y+Math.sin(y*.3)*3);dpCtx.stroke();
+  }
+  // Inner edge shadows
+  dpCtx.fillStyle='rgba(0,0,0,.5)';
+  dpCtx.fillRect(0,0,5,H);dpCtx.fillRect(W-5,0,5,H);
+  dpCtx.fillRect(0,0,W,5);dpCtx.fillRect(0,H-5,W,5);
+
+  // Apply physics (friction)
+  for(const item of physItems){
+    if(!item.dragging){
+      item.x+=item.vx;item.y+=item.vy;item.rot+=item.vrot;
+      item.vx*=.85;item.vy*=.85;item.vrot*=.88;
+      const hw=item.iw/2+4,hh=item.ih/2+4;
+      item.x=Math.max(hw,Math.min(W-hw,item.x));
+      item.y=Math.max(hh,Math.min(H-hh,item.y));
+    }
+  }
+
+  // Draw items sorted by z
+  const tc=bidx<batch.length?batch[bidx]:null;
+  const sorted=[...physItems].sort((a,b)=>a.z-b.z);
+  for(const item of sorted) drawPhysItem(item,tc);
+}
+
+function drawPhysItem(item,tc){
+  const w=item.iw, h=item.ih;
+  const sh=item.shape;
+  const r=sh.r*Math.min(w,h);
+  dpCtx.save();
+  dpCtx.translate(item.x,item.y);
+  dpCtx.rotate(item.rot);
+
+  // Drop shadow — close (1-2px not 4px) (#4 fix)
+  dpCtx.fillStyle='rgba(0,0,0,0.45)';
+  dpCtx.beginPath();dpCtx.roundRect(2,2,w,h,r);dpCtx.fill();
+
+  // Body — full color
+  dpCtx.fillStyle=item.color;
+  dpCtx.beginPath();dpCtx.roundRect(-w/2,-h/2,w,h,r);dpCtx.fill();
+
+  // Shiny highlight
+  dpCtx.fillStyle='rgba(255,255,255,0.25)';
+  dpCtx.beginPath();dpCtx.roundRect(-w/2+2,-h/2+2,w-4,h*.32,r*.6);dpCtx.fill();
+
+  // Border
+  dpCtx.strokeStyle='rgba(255,255,255,0.3)';dpCtx.lineWidth=1.5;
+  dpCtx.beginPath();dpCtx.roundRect(-w/2,-h/2,w,h,r);dpCtx.stroke();
+
+  // Target glow ring — hidden in hard mode (#4)
+  if(item.code===tc&&!hardMode){
+    dpCtx.strokeStyle='rgba(255,240,80,0.85)';dpCtx.lineWidth=3;
+    dpCtx.beginPath();dpCtx.roundRect(-w/2-4,-h/2-4,w+8,h+8,r+4);dpCtx.stroke();
+  }
+
+  // Drag highlight
+  if(item.dragging){
+    dpCtx.strokeStyle='rgba(255,255,255,0.9)';dpCtx.lineWidth=2.5;
+    dpCtx.beginPath();dpCtx.roundRect(-w/2-3,-h/2-3,w+6,h+6,r+3);dpCtx.stroke();
+  }
+
+  // Code text
+  const fs=Math.max(7,Math.floor(Math.min(w,h)*.22));
+  dpCtx.fillStyle=item.textCol;
+  dpCtx.font=`bold ${fs}px '${PX}',monospace`;
+  dpCtx.textAlign='center';dpCtx.textBaseline='middle';
+  dpCtx.fillText(item.code,0,0);
+
+  dpCtx.restore();
+}
+
+// ── Pointer events for drawer ──
+function dpHitTest(px,py){
+  const sorted=[...physItems].map((it,idx)=>({it,idx})).sort((a,b)=>b.it.z-a.it.z);
+  for(const {it,idx} of sorted){
+    // Transform to item local space
+    const dx=px-it.x,dy=py-it.y;
+    const cosR=Math.cos(-it.rot),sinR=Math.sin(-it.rot);
+    const lx=dx*cosR-dy*sinR,ly=dx*sinR+dy*cosR;
+    if(Math.abs(lx)<=it.iw/2+4&&Math.abs(ly)<=it.ih/2+4)return idx;
+  }
+  return -1;
+}
+
+dpCv.addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  dpCv.setPointerCapture(e.pointerId);
+  const rect=dpCv.getBoundingClientRect();
+  const px=e.clientX-rect.left,py=e.clientY-rect.top;
+  pointerStartX=px;pointerStartY=py;isDrag=false;
+  const hitIdx=dpHitTest(px,py);
+  if(hitIdx>=0){
+    dragIdx=hitIdx;
+    const it=physItems[hitIdx];
+    dragOffX=px-it.x;dragOffY=py-it.y;
+    it.dragging=true;
+    it.z=physItems.reduce((m,i)=>Math.max(m,i.z),0)+1;
+    it.vx=0;it.vy=0;it.vrot=0;
+  }
+},{passive:false});
+
+dpCv.addEventListener('pointermove',e=>{
+  e.preventDefault();
+  if(dragIdx<0)return;
+  const rect=dpCv.getBoundingClientRect();
+  const px=e.clientX-rect.left,py=e.clientY-rect.top;
+  if(!isDrag&&Math.hypot(px-pointerStartX,py-pointerStartY)>6)isDrag=true;
+  const it=physItems[dragIdx];
+  const prevX=it.x,prevY=it.y;
+  it.x=px-dragOffX;it.y=py-dragOffY;
+  const velX=it.x-prevX,velY=it.y-prevY;
+  // Nudge nearby items
+  for(let i=0;i<physItems.length;i++){
+    if(i===dragIdx)continue;
+    const other=physItems[i];
+    const dx=other.x-it.x,dy=other.y-it.y;
+    const d=Math.hypot(dx,dy);
+    const minD=(it.iw+other.iw)*.55;
+    if(d<minD&&d>0){
+      const push=(minD-d)/minD*.8;
+      other.vx+=(dx/d)*push*3+velX*.15;
+      other.vy+=(dy/d)*push*3+velY*.15;
+      other.vrot+=(Math.random()-.5)*.12;
+    }
+  }
+},{passive:false});
+
+dpCv.addEventListener('pointerup',e=>{
+  e.preventDefault();
+  if(dragIdx>=0){
+    const it=physItems[dragIdx];
+    it.dragging=false;
+    if(!isDrag){
+      // It was a tap → select item for scanning
+      selectDrawerItem(dragIdx);
+    }
+    dragIdx=-1;isDrag=false;
+  }
+},{passive:false});
+
+dpCv.addEventListener('pointercancel',e=>{
+  if(dragIdx>=0){physItems[dragIdx].dragging=false;dragIdx=-1;isDrag=false;}
+});
+
+function selectDrawerItem(idx){
+  const phys=physItems[idx];
+  const code=phys.code;
+  const drItem=DB[code];if(!drItem)return;
+  // Stage 1: show item + SCAN button
+  document.getElementById('dpc-code').textContent=code;
+  document.getElementById('dpc-type').textContent=drItem.type;
+  drawItemShape(document.getElementById('dpc-canvas'),code,60);
+  selItemData={physIdx:idx,code,drawer:currentDrawer,shelf:currentDrawerShelf};
+  hide('dp-confirm');
+  show('dp-pre-scan');
+}
+
+document.getElementById('dpc-scan').onclick=()=>{
+  if(!selItemData)return;
+  const{code}=selItemData;
+  const tc=bidx<batch.length?batch[bidx]:null;
+  const isMatch=code===tc;
+  const matchEl=document.getElementById('dpc-match');
+  const iconEl=document.getElementById('dpc-result-icon');
+  if(isMatch){
+    iconEl.textContent='✓';
+    matchEl.textContent='商材をスキャンしました'; // #5
+    matchEl.className='ok';
+  }else{
+    iconEl.textContent='✗';
+    matchEl.textContent='商材がちがいます'; // #5
+    matchEl.className='ng';
+  }
+  hide('dp-pre-scan');
+  show('dp-confirm');
+};
+
+document.getElementById('dpc-ok').onclick=()=>{
+  if(!selItemData)return;
+  const{physIdx,code,drawer,shelf}=selItemData;
+  const tc=bidx<batch.length?batch[bidx]:null;
+  // Remove from drawer items array
+  const drItemIdx=drawer.items.indexOf(code);
+  if(drItemIdx>=0)drawer.items.splice(drItemIdx,1);
+  // Remove from physics
+  physItems.splice(physIdx,1);
+  container.push(code);
+  hide('dp-confirm');selItemData=null;
+  if(code===tc){
+    bidx++;updateHUD();
+    updateDrawerScannerBar();
+    if(bidx>=batch.length){
+      setTimeout(()=>{
+        closeDrawerPanel();
+        gameState=GS.BATCH_DONE;
+        const stats=`${batch.length}個ピック完了`;
+        document.getElementById('wf-batch-sub').textContent=`${stats}\n\nコンテナがいっぱいになりました\n回収ゾーンへ持っていって下さい`;
+        show('wf-batch');
+      },300);
+      return;
+    }
+    showToast('商材をピックしました',`残り${batch.length-bidx}個`,'ok'); // #5
+  }else{
+    showToast('コンテナへ','バッチ外アイテム','ng');
+  }
+};
+document.getElementById('dpc-no').onclick=()=>{
+  hide('dp-confirm');hide('dp-pre-scan');selItemData=null;
+};
+
+document.getElementById('dp-back').onclick=closeDrawerPanel;
+function closeDrawerPanel(){
+  hide('drawer-panel');hide('dp-confirm');hide('dp-pre-scan');drawerOpen=false;
+  currentDrawer=null;currentDrawerShelf=null;
+  document.getElementById('scan-btn').style.display='';
+  document.getElementById('voice-btn').style.display=''; // #6 restore
+  if(currentShelf){openShelfPanel(currentShelf);}
+  renderMap();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  CONTAINER WORKFLOW
+// ══════════════════════════════════════════════════════════════
+document.getElementById('wf-batch-go').onclick=()=>{
+  hide('wf-batch');gameState=GS.RETURNING;
+  updateHUDStateMsg('回収ゾーンへ移動！コンテナを届けよう');
+};
+document.getElementById('wf-return-go').onclick=()=>{
+  hide('wf-return');gameState=GS.DEPOSITED;
+  P.hasCart=false; // #2: drop container at return zone
+  updateHUDStateMsg('空コンテナゾーンへ！新しいコンテナをセット');
+};
+
+emptyScanAnimId=null,emptyScanProgress=0;
+function startEmptyContainerScan(){
+  if(gameState!==GS.GETTING_EMPTY&&gameState!==GS.SCANNING_EMPTY)return;
+  gameState=GS.SCANNING_EMPTY;
+  emptyScanProgress=0;
+  const bar=document.getElementById('wf-bar');
+  const msg=document.getElementById('wf-scan-msg');
+  bar.style.width='0%';
+  emptyScanAnimId=setInterval(()=>{
+    if(!scanHoldActive){cancelEmptyContainerScan();return;}
+    emptyScanProgress+=2;
+    bar.style.width=emptyScanProgress+'%';
+    msg.textContent=`スキャン中... ${emptyScanProgress}%`;
+    if(emptyScanProgress>=100){
+      clearInterval(emptyScanAnimId);
+      bar.style.width='100%';
+      msg.textContent='スキャン完了！';
+      setTimeout(startNewBatch,400);
+    }
+  },60);
+}
+function cancelEmptyContainerScan(){
+  clearInterval(emptyScanAnimId);
+  emptyScanProgress=0;
+  document.getElementById('wf-bar').style.width='0%';
+  document.getElementById('wf-scan-msg').textContent='スキャナーボタンを長押し…';
+}
+function startNewBatch(){
+  hide('wf-empty');
+  P.hasCart=true; // #2: player picks up cart
+  advanceBatchCursors(); // #3: advance drawer/shelf cursor
+  batch=mkBatch();bidx=0;container=[];bnum++;moveCount=0;t0=Date.now();
+  gameState=GS.PICKING;
+  updateHUD();updateHUDStateMsg('スキャナー長押しでピック指示確認');
+  renderMap();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  HUD
+// ══════════════════════════════════════════════════════════════
+function updateHUD(){
+  document.getElementById('hb-n').textContent=bnum;
+  document.getElementById('hp-n').textContent=bidx;
+  document.getElementById('hp-t').textContent=batch.length;
+  // Update state message with BOX label
+  if(gameState===GS.PICKING&&bidx<batch.length){
+    const code=batch[bidx];
+    const locs=ITEM_IDX[code]||[];
+    if(locs.length){
+      const drawer=locs[0].shelf.drawers[locs[0].drawerId];
+      const boxLabel=drawer?drawer.label:'------';
+      updateHUDStateMsg(`${boxLabel}のBOXをスキャンして下さい`);
+    }
+  }
+}
+function updateHUDStateMsg(msg){
+  document.getElementById('hud-state-msg').textContent=msg;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════════════════════════
+toastT=null;
+function showToast(m,s,type){
+  const el=document.getElementById('toast');
+  document.getElementById('toast-m').textContent=m;
+  document.getElementById('toast-sub').textContent=s;
+  el.className=type;el.style.display='block';
+  if(toastT)clearTimeout(toastT);
+  toastT=setTimeout(()=>el.style.display='none',1300);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  VOICE BOT
+// ══════════════════════════════════════════════════════════════
+const msgs=['「すみません！」','「どきます！」','「ちょっと！」','「はい！すぐ！」'];
+document.getElementById('voice-btn').addEventListener('click',()=>{
+  const bb=document.getElementById('bbub');
+  bb.textContent=rrc(msgs);bb.style.display='block';
+  setTimeout(()=>bb.style.display='none',1600);
+  for(const b of bots){
+    const dx=b.x-P.x,dy=b.y-P.y,d=Math.hypot(dx,dy);
+    if(d<T*4){b.tx=b.x+dx/d*T*5;b.ty=b.y+dy/d*T*5;}
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════════════════════
+function show(id){document.getElementById(id).classList.add('show');}
+function hide(id){document.getElementById(id).classList.remove('show');}
+function hideEl(id){document.getElementById(id).style.display='none';}
+
+// ══════════════════════════════════════════════════════════════
+//  RESIZE
+// ══════════════════════════════════════════════════════════════
+function resize(){
+  const s=document.getElementById('screen');
+  cv.width=s.clientWidth;cv.height=s.clientHeight;
+  initScanlines();
+}
+window.addEventListener('resize',()=>{resize();renderMap();});
+
+// ══════════════════════════════════════════════════════════════
+//  START
+// ══════════════════════════════════════════════════════════════
+// ── BGM (#12) — mp3が無くてもエラーにならない ──
+bgmAudio=null,bgmOn=false;
+try{
+  bgmAudio=new Audio('bgm.mp3');
+  bgmAudio.loop=true;bgmAudio.volume=0.5;
+  bgmAudio.onerror=()=>{bgmAudio=null;};
+}catch(e){bgmAudio=null;}
+function toggleBGM(){
+  if(!bgmAudio)return;
+  if(bgmOn){bgmAudio.pause();bgmOn=false;}
+  else{bgmAudio.play().catch(()=>{});bgmOn=true;}
+  document.getElementById('bgm-btn').textContent=bgmOn?'🔊':'🔇';
+}
+const _bgmBtn=document.getElementById('bgm-btn');
+if(_bgmBtn) _bgmBtn.onclick=toggleBGM;
+const _bgmVol=document.getElementById('bgm-vol');
+if(_bgmVol) _bgmVol.oninput=e=>{if(bgmAudio)bgmAudio.volume=e.target.value/100;};
+
+document.getElementById('intro-go').onclick=()=>{
+  hardMode=document.getElementById('hard-mode-chk').checked;
+  buildDB(hardMode?TYPES_HARD:TYPES_NORMAL);
+  reinitShelves(); // rebuild with correct fill rates and item pool
+  document.getElementById('intro').style.display='none';
+  // BGM auto-start (#12) — skip if no file
+  if(bgmAudio){bgmAudio.play().catch(()=>{});bgmOn=true;document.getElementById('bgm-btn').textContent='🔊';}
+  initBots();
+  batchShelfCursor=0;batchColCursor=0;batchDrawerCursor=0;
+  batch=mkBatch();bidx=0;container=[];t0=Date.now();moveCount=0;bnum=1;
+  P.x=4.5*T;P.y=15.5*T;P.hasCart=true;
+  updateHUD();
+  gameState=GS.PICKING;
+  running=true;
+  resize();
+  renderMap();
+  loop();
+};
+</script>
+</body>
+</html>
