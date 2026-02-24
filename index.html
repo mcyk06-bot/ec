@@ -77,49 +77,31 @@ body{display:flex;align-items:center;justify-content:center;}
 #voice-btn:active{background:#0f380f;transform:scale(.91);}
 #voice-ico{font-size:18px;line-height:1;}
 
-/* BGM wrap — contains button + popup */
+/* BGM wrap */
 #bgm-wrap{
   position:absolute;
   bottom:calc(20px + env(safe-area-inset-bottom));
   right:calc(14px + 56px + 10px);
   z-index:65;
-  display:flex;flex-direction:column;align-items:center;
   user-select:none;-webkit-user-select:none;
 }
-/* BGM button */
+/* BGM button — "BGM" text, dim=off, bright=on */
 #bgm-btn{
   width:44px;height:44px;border-radius:50%;
-  background:#1a3e0a;border:2px solid #306230;
-  font-size:18px;cursor:pointer;
+  background:#0a2808;border:2px solid #1a3e0a;
+  font-family:'Press Start 2P',monospace;font-size:7px;
+  color:#306230;
+  cursor:pointer;
   display:flex;align-items:center;justify-content:center;
-  transition:all .08s;flex-shrink:0;
-  box-shadow:inset 0 2px 0 rgba(255,255,255,.1),inset 0 -2px 0 rgba(0,0,0,.3);
+  transition:all .12s;flex-shrink:0;
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.05),inset 0 -2px 0 rgba(0,0,0,.3);
+  letter-spacing:-.5px;
 }
-#bgm-btn:active{background:#0f380f;transform:scale(.91);}
-#bgm-btn.on{background:#306230;border-color:#9bbc0f;}
-/* Volume popup — hidden by default, shown when active */
-#bgm-vol-popup{
-  display:none;
-  margin-bottom:8px;
-  background:#0f380f;border:2px solid #306230;border-radius:4px;
-  padding:6px 8px;align-items:center;
-}
-#bgm-vol-popup.show{display:flex;}
-/* Vertical slider track */
-#bgm-vol-track{
-  width:14px;height:80px;
-  background:#0a2808;border:1px solid #306230;border-radius:4px;
-  position:relative;cursor:pointer;touch-action:none;
-}
-#bgm-vol-fill{
-  position:absolute;bottom:0;left:0;right:0;
-  background:#9bbc0f;border-radius:4px;
-  height:50%;transition:height .05s;
-}
-#bgm-vol-handle{
-  position:absolute;left:50%;transform:translateX(-50%);
-  width:12px;height:5px;background:#9bbc0f;border-radius:2px;
-  bottom:calc(50% - 2px);transition:bottom .05s;
+#bgm-btn:active{transform:scale(.91);}
+#bgm-btn.on{
+  background:#1a3e0a;border-color:#9bbc0f;
+  color:#9bbc0f;
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.1),inset 0 -2px 0 rgba(0,0,0,.3),0 0 6px rgba(155,188,15,.3);
 }
 
 /* Scanner panel also on top */
@@ -376,15 +358,9 @@ body{display:flex;align-items:center;justify-content:center;}
   <!-- Voice button — floats right, always on top -->
   <button id="voice-btn"><div id="voice-ico">📢</div>どいて</button>
 
-  <!-- BGM controls — popup volume bar -->
+  <!-- BGM toggle button -->
   <div id="bgm-wrap">
-    <div id="bgm-vol-popup">
-      <div id="bgm-vol-track">
-        <div id="bgm-vol-fill"></div>
-        <div id="bgm-vol-handle"></div>
-      </div>
-    </div>
-    <button id="bgm-btn">🔇</button>
+    <button id="bgm-btn">BGM</button>
   </div>
 
   <!-- Scan button — floats right, always on top -->
@@ -716,38 +692,31 @@ const SHELF_ORDER=['A','B','C','D','E','F','I','J'];
 // 1バッチ = 2〜4棚にまたがる。棚ごとに3〜5個ピック。列も分散。
 function mkBatch(){
   const items=[];
-  const shelvesPerBatch=rri(2,4);
-
+  // 1バッチ = 4〜6棚にまたがる（A D E J B C D みたいにウロウロ）
+  const shelvesPerBatch=rri(4,6);
+  // 棚文字をランダムに選ぶ（順番だが2〜3文字飛ばしで広く）
+  const usedLetters=[];
   for(let s=0;s<shelvesPerBatch;s++){
-    const ltr=SHELF_ORDER[batchShelfCursor%SHELF_ORDER.length];
-    // 列はランダムに選んでウロウロ感を出す
+    // 1〜3文字ランダムに進める
+    batchShelfCursor=(batchShelfCursor+rri(1,3))%SHELF_ORDER.length;
+    const ltr=SHELF_ORDER[batchShelfCursor];
+    usedLetters.push(ltr);
     const col=rri(1,9);
     const shelf=ALL_SHELVES.find(sh=>sh.ltr===ltr&&sh.col===col);
-    if(!shelf){
-      batchShelfCursor=(batchShelfCursor+1)%SHELF_ORDER.length;
-      continue;
-    }
-    // この棚から3〜5個ピック、引き出し番号順に進む
-    const pickCount=rri(3,5);
-    let drCursor=batchDrawerCursor%40;
+    if(!shelf) continue;
+    // この棚から2〜3個ピック
+    const pickCount=rri(2,3);
+    let drCursor=rri(0,39);
     let picked=0;
     for(let attempt=0;attempt<80&&picked<pickCount;attempt++){
       const dr=shelf.drawers[drCursor%40];
       if(dr&&dr.items.length>0){
         items.push(rrc(dr.items));
         picked++;
-        drCursor+=rri(1,4);
+        drCursor+=rri(1,6);
       } else {
         drCursor++;
       }
-    }
-    batchDrawerCursor=drCursor%40;
-    // 次の棚へ（横移動 or 縦移動）
-    if(Math.random()<0.5){
-      batchColCursor=(batchColCursor+rri(2,5))%9;
-    } else {
-      batchShelfCursor=(batchShelfCursor+1)%SHELF_ORDER.length;
-      batchDrawerCursor=rri(0,15);
     }
   }
   while(items.length<8) items.push(rrc(ALL_CODES));
@@ -755,9 +724,8 @@ function mkBatch(){
 }
 
 function advanceBatchCursors(){
-  batchShelfCursor=(batchShelfCursor+1)%SHELF_ORDER.length;
-  batchColCursor=rri(0,8);
-  batchDrawerCursor=rri(0,39);
+  // バッチ完了後も数文字ジャンプ
+  batchShelfCursor=(batchShelfCursor+rri(2,4))%SHELF_ORDER.length;
 }
 
 // ── Player ──
@@ -1450,9 +1418,9 @@ function drawPhysItem(item,tc){
   dpCtx.translate(item.x,item.y);
   dpCtx.rotate(item.rot);
 
-  // Drop shadow — close (1-2px not 4px) (#4 fix)
-  dpCtx.fillStyle='rgba(0,0,0,0.45)';
-  dpCtx.beginPath();dpCtx.roundRect(2,2,w,h,r);dpCtx.fill();
+  // Drop shadow — 1px offset
+  dpCtx.fillStyle='rgba(0,0,0,0.4)';
+  dpCtx.beginPath();dpCtx.roundRect(1,1,w,h,r);dpCtx.fill();
 
   // Body — full color
   dpCtx.fillStyle=item.color;
@@ -1757,81 +1725,21 @@ window.addEventListener('resize',()=>{resize();renderMap();});
 // ══════════════════════════════════════════════════════════════
 //  START
 // ══════════════════════════════════════════════════════════════
-// ── BGM — mp3なしでも安全、ポップアップボリュームバー ──
-let bgmVol=0.5;
-let volPopupOpen=false;
+// ── BGM — mp3なしでも安全、タップでON/OFF ──
 try{
   bgmAudio=new Audio('bgm.mp3');
-  bgmAudio.loop=true;bgmAudio.volume=bgmVol;
+  bgmAudio.loop=true;bgmAudio.volume=0.5;
   bgmAudio.onerror=()=>{bgmAudio=null;};
 }catch(e){bgmAudio=null;}
 
-function updateVolUI(){
-  const fill=document.getElementById('bgm-vol-fill');
-  const handle=document.getElementById('bgm-vol-handle');
-  if(!fill||!handle)return;
-  const pct=bgmVol*100;
-  fill.style.height=pct+'%';
-  handle.style.bottom='calc('+pct+'% - 2px)';
-}
-function setBgmVol(v){
-  bgmVol=Math.max(0,Math.min(1,v));
-  if(bgmAudio) bgmAudio.volume=bgmVol;
-  updateVolUI();
-}
-
-// BGM button: toggle play/pause; hold shows volume bar
 const _bgmBtn=document.getElementById('bgm-btn');
-const _volPopup=document.getElementById('bgm-vol-popup');
-let _bgmLongPress=null;
-
 if(_bgmBtn){
-  _bgmBtn.addEventListener('pointerdown',()=>{
-    _bgmLongPress=setTimeout(()=>{
-      _bgmLongPress=null;
-      volPopupOpen=!volPopupOpen;
-      if(volPopupOpen) _volPopup.classList.add('show');
-      else _volPopup.classList.remove('show');
-    },400);
+  _bgmBtn.addEventListener('click',()=>{
+    if(!bgmAudio)return;
+    if(bgmOn){bgmAudio.pause();bgmOn=false;_bgmBtn.classList.remove('on');}
+    else{bgmAudio.play().catch(()=>{});bgmOn=true;_bgmBtn.classList.add('on');}
   });
-  _bgmBtn.addEventListener('pointerup',()=>{
-    if(_bgmLongPress){
-      clearTimeout(_bgmLongPress);_bgmLongPress=null;
-      // Short tap = toggle BGM
-      if(!bgmAudio)return;
-      if(bgmOn){bgmAudio.pause();bgmOn=false;_bgmBtn.textContent='🔇';_bgmBtn.classList.remove('on');}
-      else{bgmAudio.play().catch(()=>{});bgmOn=true;_bgmBtn.textContent='🔊';_bgmBtn.classList.add('on');}
-    }
-  });
-  _bgmBtn.addEventListener('pointercancel',()=>{if(_bgmLongPress){clearTimeout(_bgmLongPress);_bgmLongPress=null;}});
 }
-
-// Volume track drag
-const _track=document.getElementById('bgm-vol-track');
-let _volDragging=false;
-function _volFromEvent(e){
-  const rect=_track.getBoundingClientRect();
-  const y=e.clientY-rect.top;
-  return 1-Math.max(0,Math.min(1,y/rect.height));
-}
-if(_track){
-  _track.addEventListener('pointerdown',e=>{
-    _volDragging=true;_track.setPointerCapture(e.pointerId);
-    setBgmVol(_volFromEvent(e));e.stopPropagation();
-  },{passive:false});
-  _track.addEventListener('pointermove',e=>{
-    if(_volDragging){setBgmVol(_volFromEvent(e));e.stopPropagation();}
-  },{passive:false});
-  _track.addEventListener('pointerup',e=>{_volDragging=false;});
-  _track.addEventListener('pointercancel',e=>{_volDragging=false;});
-}
-// Close popup when tapping elsewhere
-document.addEventListener('pointerdown',e=>{
-  if(volPopupOpen&&_volPopup&&!_volPopup.contains(e.target)&&e.target!==_bgmBtn){
-    volPopupOpen=false;_volPopup.classList.remove('show');
-  }
-});
-updateVolUI();
 
 document.getElementById('intro-go').onclick=()=>{
   hardMode=document.getElementById('hard-mode-chk').checked;
@@ -1840,7 +1748,7 @@ document.getElementById('intro-go').onclick=()=>{
   document.getElementById('intro').style.display='none';
   // BGM auto-start — skip if no file
   if(bgmAudio){bgmAudio.play().catch(()=>{});bgmOn=true;
-    const b=document.getElementById('bgm-btn');if(b){b.textContent='🔊';b.classList.add('on');}
+    const b=document.getElementById('bgm-btn');if(b)b.classList.add('on');
   }
   initBots();
   batchShelfCursor=0;batchColCursor=0;batchDrawerCursor=0;
