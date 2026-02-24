@@ -472,6 +472,25 @@ body{display:flex;align-items:center;justify-content:center;}
     <div style="font-family:'Press Start 2P';font-size:6px;color:#306230;margin-top:4px;" id="wf-scan-msg">スキャナーボタンを長押し…</div>
   </div>
 
+  <!-- 業務終了確認 -->
+  <div class="wf-overlay" id="wf-exit-confirm">
+    <div class="wf-icon">🏠</div>
+    <div class="wf-title">本日の業務を<br>終了しますか？</div>
+    <div style="display:flex;gap:16px;margin-top:20px;">
+      <button class="wf-btn" id="wf-exit-yes" style="background:#306230;border-color:#9bbc0f;">はい</button>
+      <button class="wf-btn" id="wf-exit-no" style="background:#1a3e0a;border-color:#306230;color:#8bac0f;">いいえ</button>
+    </div>
+  </div>
+
+  <!-- 勤務終了サマリー -->
+  <div class="wf-overlay" id="wf-end">
+    <div class="wf-icon">⭐</div>
+    <div class="wf-title" style="font-size:9px;letter-spacing:.03em;">本日の勤務終了</div>
+    <div id="wf-end-stats" style="font-family:'Press Start 2P',monospace;font-size:7px;color:#8bac0f;line-height:2.2;text-align:left;margin:18px 0 6px;width:100%;max-width:280px;"></div>
+    <div class="wf-title" style="font-size:10px;color:#9bbc0f;margin-top:8px;">お疲れ様でした</div>
+    <button class="wf-btn" id="wf-end-restart" style="margin-top:20px;font-size:7px;">もう一度プレイ</button>
+  </div>
+
   <!-- Toast -->
   <div id="toast"><div id="toast-m"></div><div id="toast-sub"></div></div>
 
@@ -488,6 +507,7 @@ body{display:flex;align-items:center;justify-content:center;}
       <li>棚をタップして📱に表示された引き出しをタップ</li>
       <li>商材をスキャンしてコンテナにいれる</li>
       <li>バッチ終了後は回収ゾーンへ</li>
+      <li>出入口から出ると業務終了</li>
     </ul>
     <button id="intro-go">START GAME</button>
     <div style="margin-top:14px;display:flex;align-items:center;gap:10px;font-family:'Press Start 2P',monospace;font-size:7px;color:#8bac0f;">
@@ -505,6 +525,8 @@ body{display:flex;align-items:center;justify-content:center;}
 // ── ALL STATE VARIABLES DECLARED FIRST (prevent TDZ errors) ──
 let hardMode=false;
 let gameState, batch, bidx, bnum, container, t0, moveCount;
+let totalPicks=0, totalMisses=0, startTime=0;  // 勤務統計
+let exitTimer=0;
 let selItemData=null;
 let panelOpen=false, drawerOpen=false;
 let pendingShelf=null, pendingOpenShelf=null;
@@ -621,7 +643,7 @@ buildDB(TYPES_NORMAL); // default; rebuilt on game start
 
 const T=52; // tile px
 const MCOLS=11, MROWS=18;
-const FLOOR=0, SHELF=2, RETURN_ZONE=3, EMPTY_ZONE=4, ENTRANCE=5;
+const FLOOR=0, SHELF=2, RETURN_ZONE=3, EMPTY_ZONE=4, ENTRANCE=5, EXIT_ZONE=6;
 
 // shelf letter → map row
 const ROW_CFG=[
@@ -643,6 +665,8 @@ for(const [r] of ROW_CFG) for(let c=1;c<=9;c++) map[r][c]=SHELF;
 for(let c=1;c<=3;c++) map[16][c]=RETURN_ZONE;
 for(let c=4;c<=6;c++) map[16][c]=ENTRANCE;
 for(let c=7;c<=9;c++) map[16][c]=EMPTY_ZONE;
+// row17 col4-6に業務終了ゾーン（出入口の真下）
+for(let col=4;col<=6;col++) map[17][col]=EXIT_ZONE;
 
 const SMAP={};
 const ITEM_IDX={};
@@ -701,7 +725,7 @@ function accessRow(r){
 // ══════════════════════════════════════════════════════════════
 //  GAME STATE
 // ══════════════════════════════════════════════════════════════
-const GS={PICKING:'p',BATCH_DONE:'bd',RETURNING:'ret',DEPOSITED:'dep',GETTING_EMPTY:'ge',SCANNING_EMPTY:'se'};
+const GS={PICKING:'p',BATCH_DONE:'bd',RETURNING:'ret',DEPOSITED:'dep',GETTING_EMPTY:'ge',SCANNING_EMPTY:'se',EXIT_WAIT:'ew'};
 gameState=GS.PICKING;
 // hardMode declared at top of script
 batch=[],bidx=0,bnum=1,container=[],t0=0,moveCount=0;
@@ -1009,6 +1033,7 @@ function renderMap(){
         if(t===RETURN_ZONE) fc='#7a9c08';
         else if(t===EMPTY_ZONE) fc='#6e8c07';
         else if(t===ENTRANCE) fc='#8bac0f';
+        else if(t===EXIT_ZONE) fc='#4a7a04';
         ctx.fillStyle=fc;ctx.fillRect(x,y,T,T);
 
         // Floor dot pattern
@@ -1016,20 +1041,8 @@ function renderMap(){
         for(let dy=8;dy<T;dy+=16)for(let dx=8;dx<T;dx+=16)
           ctx.fillRect(x+dx,y+dy,2,2);
 
-        // Zone labels
-        if(t===RETURN_ZONE){
-          ctx.fillStyle=GB0;ctx.font=`${T*.14|0}px '${PX}'`;
-          ctx.textAlign='center';ctx.textBaseline='middle';
-          ctx.fillText('回収',x+T/2,y+T*.35);ctx.fillText('ゾーン',x+T/2,y+T*.65);
-        }else if(t===EMPTY_ZONE){
-          ctx.fillStyle=GB0;ctx.font=`${T*.14|0}px '${PX}'`;
-          ctx.textAlign='center';ctx.textBaseline='middle';
-          ctx.fillText('空コンテナ',x+T/2,y+T*.35);ctx.fillText('ゾーン',x+T/2,y+T*.65);
-        }else if(t===ENTRANCE){
-          ctx.fillStyle=GB1;ctx.font=`${T*.12|0}px '${PX}'`;
-          ctx.textAlign='center';ctx.textBaseline='middle';
-          ctx.fillText('出入口',x+T/2,y+T/2);
-        }
+        // ── ゾーンラベル: タイルループ外で描くため、ここでは何もしない ──
+        // （下のzone pass で描画）
         // Row letter on left aisle (col 0)
         if(c===0&&ROW_LTR[r]){
           ctx.fillStyle=GB1;ctx.font=`700 ${T*.22|0}px '${PX}'`;
@@ -1045,6 +1058,40 @@ function renderMap(){
       }
     }
   }
+
+  // ── ゾーンラベル: 全タイル描画後に上書き、各3タイルに1つ大きく ──
+  ctx.save();
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  const zr16=16*T;
+  // 回収ゾーン c1-3
+  {const zx=1*T,zw=3*T;
+   ctx.fillStyle=GB0;
+   ctx.font=`bold ${T*.38|0}px '${PX}'`;
+   ctx.fillText('回収',zx+zw/2,zr16+T*.32);
+   ctx.font=`bold ${T*.2|0}px '${PX}'`;
+   ctx.fillText('ゾーン',zx+zw/2,zr16+T*.72);}
+  // 出入口 c4-6
+  {const zx=4*T,zw=3*T;
+   ctx.fillStyle=GB0;
+   ctx.font=`bold ${T*.38|0}px '${PX}'`;
+   ctx.fillText('出入口',zx+zw/2,zr16+T*.32);
+   ctx.font=`bold ${T*.2|0}px '${PX}'`;
+   ctx.fillText('EXIT',zx+zw/2,zr16+T*.72);}
+  // 空コンテナ c7-9
+  {const zx=7*T,zw=3*T;
+   ctx.fillStyle=GB0;
+   ctx.font=`bold ${T*.28|0}px '${PX}'`;
+   ctx.fillText('空コンテナ',zx+zw/2,zr16+T*.32);
+   ctx.font=`bold ${T*.2|0}px '${PX}'`;
+   ctx.fillText('ゾーン',zx+zw/2,zr16+T*.72);}
+  // 業務終了ゾーン row17 c4-6（出入口の真下）
+  {const zx=4*T,zw=3*T,zy=17*T;
+   ctx.fillStyle=GB0;
+   ctx.font=`bold ${T*.22|0}px '${PX}'`;
+   ctx.fillText('業務終了',zx+zw/2,zy+T*.35);
+   ctx.font=`bold ${T*.16|0}px '${PX}'`;
+   ctx.fillText('ここを通過',zx+zw/2,zy+T*.72);}
+  ctx.restore();
 
   // Bots
   for(const b of bots){
@@ -1131,7 +1178,8 @@ zoneCooldown=0;
 function checkZoneTrigger(){
   if(zoneCooldown>0){zoneCooldown--;return;}
   const tr=Math.floor(P.y/T),tc=Math.floor(P.x/T);
-  if(tr<0||tr>=MROWS||tc<0||tc>=MCOLS)return;
+  if(tr<0||tr>=MROWS||tc<0||tc>=MCOLS){return;}  // マップ外は無視
+  exitTimer=0;
   const t=map[tr][tc];
   if(t===RETURN_ZONE&&gameState===GS.RETURNING){
     gameState=GS.DEPOSITED;zoneCooldown=120;
@@ -1141,7 +1189,53 @@ function checkZoneTrigger(){
     gameState=GS.GETTING_EMPTY;zoneCooldown=120;
     show('wf-empty');
   }
+  if(t===ENTRANCE){
+    exitTimer++;
+    if(exitTimer===180) showExitConfirm(); // 出入口に3秒で確認
+  }
+  if(t===EXIT_ZONE){
+    // 業務終了ゾーンに踏み込んだら即座に確認
+    if(exitTimer===0) showExitConfirm();
+    exitTimer++;
+  }
 }
+
+function showExitConfirm(){
+  if(document.getElementById('wf-exit-confirm').classList.contains('show')) return;
+  running=false;
+  show('wf-exit-confirm');
+}
+
+function showEndStats(){
+  const elapsed=Date.now()-startTime;
+  const hh=Math.floor(elapsed/3600000).toString().padStart(2,'0');
+  const mm=Math.floor((elapsed%3600000)/60000).toString().padStart(2,'0');
+  const ss=Math.floor((elapsed%60000)/1000).toString().padStart(2,'0');
+  const accuracy=totalPicks>0?Math.round((totalPicks/(totalPicks+totalMisses))*100):0;
+  // 生産性: ピック数 / 勤務時間(時間)
+  const hrs=elapsed/3600000||1/60;
+  const productivity=Math.round(totalPicks/hrs);
+  document.getElementById('wf-end-stats').innerHTML=
+    `勤務時間　　${hh}:${mm}:${ss}<br>`+
+    `ピック総数　${totalPicks}個<br>`+
+    `ミスの数　　${totalMisses}回<br>`+
+    `正確率　　　${accuracy}%<br>`+
+    `生産性　　　${productivity}個/時`;
+  hide('wf-exit-confirm');
+  show('wf-end');
+}
+
+document.getElementById('wf-exit-yes').onclick=showEndStats;
+document.getElementById('wf-exit-no').onclick=()=>{
+  hide('wf-exit-confirm');
+  exitTimer=0;
+  running=true;
+  loop();
+};
+document.getElementById('wf-end-restart').onclick=()=>{
+  hide('wf-end');
+  document.getElementById('intro').style.display='flex';
+};
 
 // ══════════════════════════════════════════════════════════════
 //  INPUT — MAP CANVAS
@@ -1618,9 +1712,9 @@ document.getElementById('dpc-ok').onclick=()=>{
       },300);
       return;
     }
-    showToast('商材をピックしました',`残り${batch.length-bidx}個`,'ok'); // #5
+    totalPicks++;showToast('商材をピックしました',`残り${batch.length-bidx}個`,'ok'); // #5
   }else{
-    showToast('コンテナへ','バッチ外アイテム','ng');
+    totalMisses++;showToast('コンテナへ','バッチ外アイテム','ng');
   }
 };
 document.getElementById('dpc-no').onclick=()=>{
@@ -1789,6 +1883,7 @@ document.getElementById('intro-go').onclick=()=>{
   initBots();
   batchShelfCursor=0;batchColCursor=0;batchDrawerCursor=0;
   batch=mkBatch();bidx=0;container=[];t0=Date.now();moveCount=0;bnum=1;
+  totalPicks=0;totalMisses=0;startTime=Date.now();
   P.x=4.5*T;P.y=15.5*T;P.hasCart=true;
   updateHUD();
   gameState=GS.PICKING;
