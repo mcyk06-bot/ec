@@ -1720,31 +1720,38 @@ window.addEventListener('resize',()=>{resize();renderMap();});
 // ══════════════════════════════════════════════════════════════
 //  START
 // ══════════════════════════════════════════════════════════════
-// ── BGM — mp3なしでも安全、タップでON/OFF ──
+// ── BGM — タップでON/OFF、mp3なしでもボタンは動く ──
 try{
   bgmAudio=new Audio('bgm.mp3');
-  bgmAudio.loop=true;bgmAudio.volume=0.5;
+  bgmAudio.loop=true;
+  bgmAudio.volume=0.5;
   bgmAudio.onerror=()=>{bgmAudio=null;};
 }catch(e){bgmAudio=null;}
 
-const _bgmBtn=document.getElementById('bgm-btn');
-if(_bgmBtn){
-  _bgmBtn.addEventListener('click',()=>{
-    if(!bgmAudio)return;
-    if(bgmOn){bgmAudio.pause();bgmOn=false;_bgmBtn.classList.remove('on');}
-    else{bgmAudio.play().catch(()=>{});bgmOn=true;_bgmBtn.classList.add('on');}
-  });
+function setBgmOn(on){
+  bgmOn=on;
+  const b=document.getElementById('bgm-btn');
+  if(!b)return;
+  if(bgmOn){
+    b.classList.add('on');
+    if(bgmAudio) bgmAudio.play().catch(()=>{});
+  }else{
+    b.classList.remove('on');
+    if(bgmAudio) bgmAudio.pause();
+  }
 }
+
+document.getElementById('bgm-btn').addEventListener('click',()=>{
+  setBgmOn(!bgmOn);
+});
 
 document.getElementById('intro-go').onclick=()=>{
   hardMode=document.getElementById('hard-mode-chk').checked;
   buildDB(hardMode?TYPES_HARD:TYPES_NORMAL);
   reinitShelves(); // rebuild with correct fill rates and item pool
   document.getElementById('intro').style.display='none';
-  // BGM auto-start — skip if no file
-  if(bgmAudio){bgmAudio.play().catch(()=>{});bgmOn=true;
-    const b=document.getElementById('bgm-btn');if(b)b.classList.add('on');
-  }
+  // BGM — ゲーム開始時はOFF（ユーザーがボタンで操作）
+  bgmOn=false;
   initBots();
   batchShelfCursor=0;batchColCursor=0;batchDrawerCursor=0;
   batch=mkBatch();bidx=0;container=[];t0=Date.now();moveCount=0;bnum=1;
