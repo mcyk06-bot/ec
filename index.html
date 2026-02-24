@@ -480,7 +480,7 @@ body{display:flex;align-items:center;justify-content:center;}
   <div id="intro">
     <div style="font-size:32px;margin-bottom:12px;">📦</div>
     <div class="intro-title">EC<span>倉庫</span><br>PICKING</div>
-    <div class="intro-sub">〜 地獄の日常 〜</div>
+    <div class="intro-sub">〜 安全第一 〜</div>
     <ul class="intro-rules">
       <li>マップをタップして移動</li>
       <li>棚をタップ → 引き出し一覧</li>
@@ -690,41 +690,47 @@ const SHELF_ORDER=['A','B','C','D','E','F','I','J'];
 
 // ── バッチ生成：倉庫をA→J順にウロウロ ──
 // 1バッチ = 2〜4棚にまたがる。棚ごとに3〜5個ピック。列も分散。
+// バッチアイテム: {code, shelf, drawerId} — スキャナーが正確な棚と引き出しを指示できる
 function mkBatch(){
   const items=[];
-  // 1バッチ = 4〜6棚にまたがる（A D E J B C D みたいにウロウロ）
+  // 1バッチ = 4〜6棚（A→D→I→B→E みたいに倉庫中をウロウロ）
   const shelvesPerBatch=rri(4,6);
-  // 棚文字をランダムに選ぶ（順番だが2〜3文字飛ばしで広く）
-  const usedLetters=[];
   for(let s=0;s<shelvesPerBatch;s++){
-    // 1〜3文字ランダムに進める
+    // 棚文字を1〜3文字ランダムにジャンプ
     batchShelfCursor=(batchShelfCursor+rri(1,3))%SHELF_ORDER.length;
     const ltr=SHELF_ORDER[batchShelfCursor];
-    usedLetters.push(ltr);
     const col=rri(1,9);
     const shelf=ALL_SHELVES.find(sh=>sh.ltr===ltr&&sh.col===col);
     if(!shelf) continue;
-    // この棚から2〜3個ピック
+    // この棚から2〜3個ピック、引き出し番号もランダムに分散
     const pickCount=rri(2,3);
     let drCursor=rri(0,39);
     let picked=0;
     for(let attempt=0;attempt<80&&picked<pickCount;attempt++){
-      const dr=shelf.drawers[drCursor%40];
+      const drIdx=drCursor%40;
+      const dr=shelf.drawers[drIdx];
       if(dr&&dr.items.length>0){
-        items.push(rrc(dr.items));
+        const code=rrc(dr.items);
+        // ★ codeだけでなく、どの棚・引き出しかも記録する
+        items.push({code, shelf, drawerId:drIdx});
         picked++;
-        drCursor+=rri(1,6);
+        drCursor+=rri(2,8);
       } else {
         drCursor++;
       }
     }
   }
-  while(items.length<8) items.push(rrc(ALL_CODES));
+  // 不足分はランダムな棚から補充
+  while(items.length<8){
+    const shelf=rrc(ALL_SHELVES);
+    const dr=rrc(shelf.drawers.filter(d=>d.items.length>0));
+    if(dr) items.push({code:rrc(dr.items),shelf,drawerId:dr.id});
+    else items.push({code:rrc(ALL_CODES),shelf:rrc(ALL_SHELVES),drawerId:0});
+  }
   return items.slice(0,rri(10,16));
 }
 
 function advanceBatchCursors(){
-  // バッチ完了後も数文字ジャンプ
   batchShelfCursor=(batchShelfCursor+rri(2,4))%SHELF_ORDER.length;
 }
 
@@ -923,7 +929,7 @@ function renderMap(){
 
   ctx.save();ctx.translate(-camX|0,-camY|0);
 
-  const tc=bidx<batch.length?batch[bidx]:null;
+  const tc=bidx<batch.length?batch[bidx].code:null;
 
   for(let r=0;r<MROWS;r++){
     for(let c=0;c<MCOLS;c++){
@@ -1219,16 +1225,10 @@ function refreshScannerPanel(){
     document.getElementById('sp-shelf-id').textContent='完了！';
     return;
   }
-  const code=batch[bidx],item=DB[code];
-  // Find the specific BOX (drawer) label that contains the target
-  const locs=ITEM_IDX[code]||[];
-  let boxLabel='??????';
-  if(locs.length){
-    // Pick the first matching drawer label
-    const loc=locs[0];
-    const drawer=loc.shelf.drawers[loc.drawerId];
-    boxLabel=drawer?drawer.label:loc.shelf.id;
-  }
+  const entry=batch[bidx];
+  const code=entry.code, item=DB[code];
+  const drawer=entry.shelf.drawers[entry.drawerId];
+  const boxLabel=drawer?drawer.label:entry.shelf.id;
   document.getElementById('sp-shelf-id').textContent=`${boxLabel}のBOXを`;
   document.getElementById('sp-code').textContent=code;
   document.getElementById('sp-type').textContent=item.type;
@@ -1237,13 +1237,11 @@ function refreshScannerPanel(){
   drawItemShape(document.getElementById('sp-cnv'),code,56);
 }
 
-// Get the exact drawer label shown in scanner for current target
+// Get the exact drawer label — uses the stored shelf/drawer from mkBatch
 function getTargetBoxLabel(){
   if(bidx>=batch.length) return null;
-  const code=batch[bidx];
-  const locs=ITEM_IDX[code]||[];
-  if(!locs.length) return null;
-  const drawer=locs[0].shelf.drawers[locs[0].drawerId];
+  const entry=batch[bidx];
+  const drawer=entry.shelf.drawers[entry.drawerId];
   return drawer?drawer.label:null;
 }
 
@@ -1309,7 +1307,7 @@ currentDrawer=null,currentDrawerShelf=null;
 const ITEM_W=40,ITEM_H=40; // base size for physics items
 
 function updateDrawerScannerBar(){
-  const code=bidx<batch.length?batch[bidx]:null;
+  const code=bidx<batch.length?batch[bidx].code:null;
   const boxLabel=getTargetBoxLabel()||'------';
   document.getElementById('dsb-box').textContent=`${boxLabel}のBOXをスキャン`;
   if(code&&DB[code]){
@@ -1405,7 +1403,7 @@ function renderDrawerCanvas(){
   }
 
   // Draw items sorted by z
-  const tc=bidx<batch.length?batch[bidx]:null;
+  const tc=bidx<batch.length?batch[bidx].code:null;
   const sorted=[...physItems].sort((a,b)=>a.z-b.z);
   for(const item of sorted) drawPhysItem(item,tc);
 }
@@ -1545,7 +1543,7 @@ function selectDrawerItem(idx){
 document.getElementById('dpc-scan').onclick=()=>{
   if(!selItemData)return;
   const{code}=selItemData;
-  const tc=bidx<batch.length?batch[bidx]:null;
+  const tc=bidx<batch.length?batch[bidx].code:null;
   const isMatch=code===tc;
   const matchEl=document.getElementById('dpc-match');
   const iconEl=document.getElementById('dpc-result-icon');
@@ -1565,7 +1563,7 @@ document.getElementById('dpc-scan').onclick=()=>{
 document.getElementById('dpc-ok').onclick=()=>{
   if(!selItemData)return;
   const{physIdx,code,drawer,shelf}=selItemData;
-  const tc=bidx<batch.length?batch[bidx]:null;
+  const tc=bidx<batch.length?batch[bidx].code:null;
   // Remove from drawer items array
   const drItemIdx=drawer.items.indexOf(code);
   if(drItemIdx>=0)drawer.items.splice(drItemIdx,1);
@@ -1665,13 +1663,10 @@ function updateHUD(){
   document.getElementById('hp-t').textContent=batch.length;
   // Update state message with BOX label
   if(gameState===GS.PICKING&&bidx<batch.length){
-    const code=batch[bidx];
-    const locs=ITEM_IDX[code]||[];
-    if(locs.length){
-      const drawer=locs[0].shelf.drawers[locs[0].drawerId];
-      const boxLabel=drawer?drawer.label:'------';
-      updateHUDStateMsg(`${boxLabel}のBOXをスキャンして下さい`);
-    }
+    const entry=batch[bidx];
+    const drawer=entry.shelf.drawers[entry.drawerId];
+    const boxLabel=drawer?drawer.label:'------';
+    updateHUDStateMsg(`${boxLabel}のBOXをスキャンして下さい`);
   }
 }
 function updateHUDStateMsg(msg){
