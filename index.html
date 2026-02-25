@@ -373,6 +373,42 @@ body{display:flex;align-items:center;justify-content:center;}
   box-shadow:4px 4px 0 #306230;transition:all .08s;
 }
 #intro-go:active{transform:translate(2px,2px);box-shadow:2px 2px 0 #306230;}
+
+/* ── Tutorial ── */
+#tut-hint{
+  position:absolute;top:0;left:0;right:0;z-index:35;
+  background:rgba(10,40,10,.94);border-bottom:3px solid #9bbc0f;
+  padding:10px 14px;
+  font-family:'Press Start 2P',monospace;font-size:7px;
+  color:#9bbc0f;line-height:2;text-align:center;
+  display:none;pointer-events:none;
+}
+#tut-hint.show{display:block;}
+#tut-step{font-size:5px;color:#306230;margin-bottom:4px;}
+#tut-arrow{font-size:22px;display:block;animation:tutPulse .7s ease-in-out infinite alternate;}
+@keyframes tutPulse{from{opacity:.4;transform:scale(.85);}to{opacity:1;transform:scale(1.1);}}
+
+/* Tutorial path overlay on canvas - drawn via JS */
+
+#tut-choice{margin-top:14px;display:flex;align-items:center;gap:10px;font-family:'Press Start 2P',monospace;font-size:7px;color:#8bac0f;}
+#tut-chk-wrap{display:flex;align-items:center;gap:8px;cursor:pointer;}
+
+/* ── Language switcher ── */
+#lang-switch{
+  display:flex;gap:8px;margin-bottom:16px;
+}
+.lang-btn{
+  font-family:'Press Start 2P',monospace;font-size:8px;
+  padding:8px 14px;border:2px solid #306230;
+  background:#0a2808;color:#8bac0f;
+  cursor:pointer;transition:all .1s;letter-spacing:.04em;
+}
+.lang-btn:active{transform:scale(.94);}
+.lang-btn.active{
+  background:#9bbc0f;color:#0f380f;
+  border-color:#9bbc0f;
+  box-shadow:0 0 0 2px #306230,2px 2px 0 #306230;
+}
 </style>
 </head>
 <body oncopy="return false" oncut="return false" onselectstart="return false">
@@ -384,13 +420,13 @@ body{display:flex;align-items:center;justify-content:center;}
   <div id="hud">
     <div id="hud-left">
       <div id="hud-batch">BATCH: <span id="hb-n">1</span></div>
-      <div id="hud-prog"><span id="hp-n">0</span>/<span id="hp-t">0</span> ピック完了</div>
+      <div id="hud-prog"><span id="hp-n">0</span>/<span id="hp-t">0</span> <span id="hud-picks-lbl">ピック完了</span></div>
       <div id="hud-state-msg">スキャナー長押しでピック指示確認</div>
     </div>
   </div>
 
   <!-- Voice button — floats right, always on top -->
-  <button id="voice-btn"><div id="voice-ico">📢</div>どいて</button>
+  <button id="voice-btn"><div id="voice-ico">📢</div><span id="voice-lbl">どいて</span></button>
 
   <!-- BGM toggle button -->
   <div id="bgm-wrap">
@@ -482,7 +518,7 @@ body{display:flex;align-items:center;justify-content:center;}
   <!-- Workflow: batch done -->
   <div class="wf-overlay" id="wf-batch">
     <div class="wf-icon">📦</div>
-    <div class="wf-title">バッチ完了！</div>
+    <div class="wf-title" id="wf-batch-title">バッチ完了！</div>
     <div class="wf-sub" id="wf-batch-sub">コンテナがいっぱいになりました<br><br>回収ゾーンへ持っていって下さい</div>
     <button class="wf-btn" id="wf-batch-go">回収ゾーンへ ▶</button>
   </div>
@@ -490,16 +526,16 @@ body{display:flex;align-items:center;justify-content:center;}
   <!-- Workflow: at return zone -->
   <div class="wf-overlay" id="wf-return">
     <div class="wf-icon">🏁</div>
-    <div class="wf-title">回収ゾーン</div>
-    <div class="wf-sub">コンテナを置きました<br><br>次は空コンテナゾーンへ</div>
+    <div class="wf-title" id="wf-return-title">回収ゾーン</div>
+    <div class="wf-sub" id="wf-return-sub">コンテナを置きました<br><br>次は空コンテナゾーンへ</div>
     <button class="wf-btn" id="wf-return-go">空コンテナゾーンへ ▶</button>
   </div>
 
   <!-- Workflow: at empty container zone -->
   <div class="wf-overlay" id="wf-empty">
     <div class="wf-icon">🗃️</div>
-    <div class="wf-title">空コンテナゾーン</div>
-    <div class="wf-scan-target">スキャナーを長押しして<br>空コンテナをセット</div>
+    <div class="wf-title" id="wf-empty-title">空コンテナゾーン</div>
+    <div class="wf-scan-target" id="wf-empty-scan-target">スキャナーを長押しして<br>空コンテナをセット</div>
     <div class="wf-progress" id="wf-prog"><div class="wf-progress-bar" id="wf-bar"></div></div>
     <div style="font-family:'Press Start 2P';font-size:6px;color:#306230;margin-top:4px;" id="wf-scan-msg">スキャナーボタンを長押し…</div>
   </div>
@@ -507,7 +543,7 @@ body{display:flex;align-items:center;justify-content:center;}
   <!-- 業務終了確認 -->
   <div class="wf-overlay" id="wf-exit-confirm">
     <div class="wf-icon">🏠</div>
-    <div class="wf-title">本日の業務を<br>終了しますか？</div>
+    <div class="wf-title" id="wf-exit-title">本日の業務を<br>終了しますか？</div>
     <div style="display:flex;gap:16px;margin-top:20px;">
       <button class="wf-btn" id="wf-exit-yes" style="background:#306230;border-color:#9bbc0f;">はい</button>
       <button class="wf-btn" id="wf-exit-no" style="background:#1a3e0a;border-color:#306230;color:#8bac0f;">いいえ</button>
@@ -516,11 +552,14 @@ body{display:flex;align-items:center;justify-content:center;}
 
   <div class="wf-overlay" id="wf-end">
     <div class="wf-icon">⭐</div>
-    <div class="wf-title" style="font-size:13px;letter-spacing:.03em;">本日の勤務終了</div>
+    <div class="wf-title" id="wf-end-title" style="font-size:13px;letter-spacing:.03em;">本日の勤務終了</div>
     <div id="wf-end-stats" style="font-family:'Press Start 2P',monospace;font-size:10px;color:#8bac0f;line-height:2.6;text-align:left;margin:18px 0 6px;width:100%;max-width:280px;"></div>
-    <div class="wf-title" style="font-size:13px;color:#9bbc0f;margin-top:8px;">お疲れ様でした</div>
+    <div class="wf-title" id="wf-end-thanks" style="font-size:13px;color:#9bbc0f;margin-top:8px;">お疲れ様でした</div>
     <button class="wf-btn" id="wf-end-restart" style="margin-top:20px;font-size:9px;">もう一度プレイ</button>
   </div>
+
+  <!-- Tutorial hint overlay -->
+  <div id="tut-hint"><div id="tut-step">STEP 1/7</div><span id="tut-arrow">▼</span><div id="tut-msg">空コンテナゾーンへ移動しよう</div></div>
 
   <!-- Toast -->
   <div id="toast"><div id="toast-m"></div><div id="toast-sub"></div></div>
@@ -530,10 +569,15 @@ body{display:flex;align-items:center;justify-content:center;}
 
   <!-- Intro -->
   <div id="intro">
+    <!-- Language switcher -->
+    <div id="lang-switch">
+      <button class="lang-btn active" id="lang-ja">日本語</button>
+      <button class="lang-btn" id="lang-en">English</button>
+    </div>
     <div style="font-size:32px;margin-bottom:12px;">📦</div>
     <div class="intro-title">EC<span>倉庫</span><br>PICKING</div>
-    <div class="intro-sub">〜 安全第一 〜</div>
-    <ul class="intro-rules">
+    <div class="intro-sub" id="intro-sub">〜 安全第一 〜</div>
+    <ul class="intro-rules" id="intro-rules-list">
       <li>📱をみて行き先を確認</li>
       <li>棚をタップして📱に表示された引き出しをタップ</li>
       <li>商材をスキャンしてコンテナにいれる</li>
@@ -544,7 +588,13 @@ body{display:flex;align-items:center;justify-content:center;}
     <div style="margin-top:14px;display:flex;align-items:center;gap:10px;font-family:'Press Start 2P',monospace;font-size:7px;color:#8bac0f;">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
         <input type="checkbox" id="hard-mode-chk" style="width:16px;height:16px;cursor:pointer;accent-color:#9bbc0f;">
-        HARD MODE
+        <span id="hard-mode-lbl">HARD MODE</span>
+      </label>
+    </div>
+    <div id="tut-choice" style="margin-top:8px;">
+      <label id="tut-chk-wrap" style="display:flex;align-items:center;gap:8px;cursor:pointer;font-family:'Press Start 2P',monospace;font-size:7px;color:#9bbc0f;">
+        <input type="checkbox" id="tutorial-chk" checked style="width:16px;height:16px;cursor:pointer;accent-color:#9bbc0f;">
+        <span id="tut-chk-lbl">チュートリアルあり</span>
       </label>
     </div>
     <div id="hard-desc" style="font-family:'Press Start 2P',monospace;font-size:7px;color:#306230;margin-top:6px;text-align:center;line-height:2;">ハイライトなし</div>
@@ -555,6 +605,8 @@ body{display:flex;align-items:center;justify-content:center;}
 'use strict';
 // ── ALL STATE VARIABLES DECLARED FIRST (prevent TDZ errors) ──
 let hardMode=false;
+let lang='ja'; // 'ja' or 'en'
+let tutorialMode=false, tutStep=0;
 let gameState, batch, bidx, bnum, container, t0, moveCount;
 let totalPicks=0, totalMisses=0, totalLost=0, startTime=0;  // 勤務統計
 let exitTimer=0;
@@ -889,6 +941,15 @@ const SHELF_ORDER=['A','B','C','D','E','F','I','J'];
 // 1バッチ = 2〜4棚にまたがる。棚ごとに3〜5個ピック。列も分散。
 // バッチアイテム: {code, shelf, drawerId} — スキャナーが正確な棚と引き出しを指示できる
 function mkBatch(){
+  // チュートリアルモードは1個だけ、A棚は字幕と重なるので除外
+  if(tutorialMode){
+    const nonAShelves=ALL_SHELVES.filter(s=>s.ltr!=='A');
+    for(let attempt=0;attempt<50;attempt++){
+      const shelf=rrc(nonAShelves);
+      const dr=rrc(shelf.drawers.filter(d=>d.items.length>0));
+      if(dr) return [{code:rrc(dr.items),shelf,drawerId:dr.id}];
+    }
+  }
   const items=[];
   // 1バッチ = 4〜6棚（A→D→I→B→E みたいに倉庫中をウロウロ）
   const shelvesPerBatch=rri(4,6);
@@ -1184,24 +1245,24 @@ function buildFloorCache(){
   const zr16=16*T;
   {const zx=1*T,zw=3*T;
    fc.fillStyle=GB0; fc.font=`bold ${T*.38|0}px '${PX}'`;
-   fc.fillText('回収',zx+zw/2,zr16+T*.32);
+   fc.fillText(t('mapReturn'),zx+zw/2,zr16+T*.32);
    fc.font=`bold ${T*.2|0}px '${PX}'`;
-   fc.fillText('ゾーン',zx+zw/2,zr16+T*.72);}
+   fc.fillText(t('mapReturnSub'),zx+zw/2,zr16+T*.72);}
   {const zx=4*T,zw=3*T;
    fc.fillStyle=GB0; fc.font=`bold ${T*.38|0}px '${PX}'`;
-   fc.fillText('出入口',zx+zw/2,zr16+T*.32);
+   fc.fillText(t('mapExit'),zx+zw/2,zr16+T*.32);
    fc.font=`bold ${T*.2|0}px '${PX}'`;
-   fc.fillText('EXIT',zx+zw/2,zr16+T*.72);}
+   fc.fillText(t('mapExitSub'),zx+zw/2,zr16+T*.72);}
   {const zx=7*T,zw=3*T;
    fc.fillStyle=GB0; fc.font=`bold ${T*.28|0}px '${PX}'`;
-   fc.fillText('空コンテナ',zx+zw/2,zr16+T*.32);
+   fc.fillText(t('mapEmpty'),zx+zw/2,zr16+T*.32);
    fc.font=`bold ${T*.2|0}px '${PX}'`;
-   fc.fillText('ゾーン',zx+zw/2,zr16+T*.72);}
+   fc.fillText(t('mapEmptySub'),zx+zw/2,zr16+T*.72);}
   {const zx=4*T,zw=3*T,zy=17*T;
    fc.fillStyle=GB0; fc.font=`bold ${T*.22|0}px '${PX}'`;
-   fc.fillText('業務終了',zx+zw/2,zy+T*.35);
+   fc.fillText(t('mapEnd'),zx+zw/2,zy+T*.35);
    fc.font=`bold ${T*.16|0}px '${PX}'`;
-   fc.fillText('ここを通過',zx+zw/2,zy+T*.72);}
+   fc.fillText(t('mapEndSub'),zx+zw/2,zy+T*.72);}
   fc.restore();
   floorCacheDirty=false;
 }
@@ -1222,6 +1283,7 @@ function renderMap(){
   // Only pulse when there's a target and not in hard mode
   const tc=bidx<batch.length?batch[bidx].code:null;
   if(tc&&!hardMode) pulseTick+=0.05;
+  else if(tutorialMode) pulseTick+=0.05;
 
   const W=cv.width,H=cv.height;
   const hudH=document.getElementById('hud').offsetHeight||68;
@@ -1300,6 +1362,9 @@ function renderMap(){
     drawSprite(ctx,SPR_CART,cartX,P.y-ch,false);
   }
 
+  // Tutorial path overlay
+  drawTutPath(ctx);
+
   ctx.restore();
 }
 
@@ -1357,6 +1422,7 @@ function checkZoneTrigger(){
   if(t===RETURN_ZONE&&gameState===GS.RETURNING){
     gameState=GS.DEPOSITED;zoneCooldown=60;
     show('wf-return');
+    if(tutorialMode&&tutStep>=7) advanceTut(99); // チュートリアル完了！
   }
   if(t===EMPTY_ZONE&&gameState===GS.DEPOSITED){
     gameState=GS.GETTING_EMPTY;zoneCooldown=60;
@@ -1388,12 +1454,7 @@ function showEndStats(){
   // 生産性: ピック数 / 勤務時間(時間)
   const hrs=elapsed/3600000||1/60;
   const productivity=Math.round(totalPicks/hrs);
-  document.getElementById('wf-end-stats').innerHTML=
-    `勤務時間　　${hh}:${mm}:${ss}<br>`+
-    `ピック総数　${totalPicks}個<br>`+
-    `ピックミス　${totalMisses}回<br>`+
-    `正確率　　　${accuracy}%<br>`+
-    `生産性　　　${productivity}個/時`;
+  document.getElementById('wf-end-stats').innerHTML=t('endStatsFmt',hh,mm,ss,totalPicks,totalMisses,accuracy,productivity);
   hide('wf-exit-confirm');
   show('wf-end');
 }
@@ -1413,6 +1474,7 @@ document.getElementById('wf-exit-no').onclick=()=>{
 document.getElementById('wf-end-restart').onclick=()=>{
   hide('wf-end');
   document.getElementById('intro').style.display='flex';
+  applyLang();
 };
 
 // ══════════════════════════════════════════════════════════════
@@ -1455,6 +1517,7 @@ const spEl=document.getElementById('sp');
 function startScan(){
   scanHoldActive=true;
   scanBtn.classList.add('held');
+  if(tutorialMode&&tutStep===1) advanceTut(2); // スキャナー確認 → 棚へ移動
   if(gameState===GS.GETTING_EMPTY){startEmptyContainerScan();return;}
   refreshScannerPanel();
   if(!drawerOpen){
@@ -1512,31 +1575,31 @@ scanBtn.addEventListener('touchend',endScan);
 
 function refreshScannerPanel(){
   if(gameState===GS.BATCH_DONE||gameState===GS.RETURNING||gameState===GS.DEPOSITED){
-    document.getElementById('sp-shelf-id').textContent='回収ゾーンへ';
-    document.getElementById('sp-code').textContent='コンテナ';
-    document.getElementById('sp-type').textContent='持っていって！';
+    document.getElementById('sp-shelf-id').textContent=t('scanReturnZone');
+    document.getElementById('sp-code').textContent=t('scanContainerTxt');
+    document.getElementById('sp-type').textContent=t('scanDeliverMsg');
     document.getElementById('sp-rem').textContent='--';document.getElementById('sp-pg').textContent='--/--';
     return;
   }
   if(gameState===GS.GETTING_EMPTY||gameState===GS.SCANNING_EMPTY){
-    document.getElementById('sp-shelf-id').textContent='空コンテナゾーン';
-    document.getElementById('sp-code').textContent='空コンテナ';
-    document.getElementById('sp-type').textContent='長押しでスキャン！';
+    document.getElementById('sp-shelf-id').textContent=t('scanEmptyZone');
+    document.getElementById('sp-code').textContent=t('scanEmptyBox');
+    document.getElementById('sp-type').textContent=t('scanHoldMsg');
     document.getElementById('sp-rem').textContent='--';document.getElementById('sp-pg').textContent='--/--';
     return;
   }
   if(bidx>=batch.length){
-    document.getElementById('sp-shelf-id').textContent='完了！';
+    document.getElementById('sp-shelf-id').textContent=t('scanBoxDone');
     return;
   }
   const entry=batch[bidx];
   const code=entry.code, item=DB[code];
   const drawer=entry.shelf.drawers[entry.drawerId];
   const boxLabel=drawer?drawer.label:entry.shelf.id;
-  document.getElementById('sp-shelf-id').textContent=`${boxLabel}のBOXを`;
+  document.getElementById('sp-shelf-id').textContent=t('scanBoxFmt',boxLabel);
   document.getElementById('sp-code').textContent=code;
   document.getElementById('sp-type').textContent=item.type;
-  document.getElementById('sp-rem').textContent=`${batch.length-bidx}個残り`;
+  document.getElementById('sp-rem').textContent=t('scanRemFmt',batch.length-bidx);
   document.getElementById('sp-pg').textContent=`${bidx+1}/${batch.length}`;
   drawItemShape(document.getElementById('sp-cnv'),code,56);
 }
@@ -1556,12 +1619,13 @@ currentShelf=null;
 function openShelfPanel(shelf){
   panelOpen=true;currentShelf=shelf;
   const shelfLabel=shelf.ltr+String(shelf.colNum/100|0).padStart(2,'0');
-  document.getElementById('sp-hdr-title').textContent=`棚 ${shelfLabel}`;
+  document.getElementById('sp-hdr-title').textContent=(lang==='ja'?'棚 ':'Shelf ')+shelfLabel;
   document.getElementById('sp-hdr-sub').textContent='';
   document.getElementById('voice-btn').style.display='none';
   document.getElementById('bgm-wrap').style.display='none'; // #6
   buildShelfGrid(shelf);
   show('shelf-panel');
+  if(tutorialMode&&tutStep===2) advanceTut(3); // 棚パネル → 引き出しタップ
 }
 function buildShelfGrid(shelf){
   const targetBox=getTargetBoxLabel();
@@ -1572,7 +1636,7 @@ function buildShelfGrid(shelf){
     const btn=document.createElement('div');
     btn.className='dr-btn';
     btn.dataset.did=dr.id;
-    if(isExactTarget&&scanHoldActive&&!hardMode) btn.classList.add('target-glow');
+    if(isExactTarget&&(scanHoldActive||tutorialMode)&&!hardMode) btn.classList.add('target-glow');
     // #8: small count on top, big label on bottom
     btn.innerHTML=`
       <div class="dr-count-bar">${dr.items.length}こ</div>
@@ -1589,7 +1653,7 @@ function refreshShelfPanelHighlights(glow){
     const did=parseInt(btn.dataset.did);
     const dr=currentShelf.drawers[did];
     const isExact=(dr&&dr.label===targetBox);
-    if(glow&&isExact) btn.classList.add('target-glow');
+    if((glow||tutorialMode)&&isExact) btn.classList.add('target-glow');
     else btn.classList.remove('target-glow');
   });
 }
@@ -1614,23 +1678,22 @@ const ITEM_W=40,ITEM_H=40; // base size for physics items
 function updateDrawerScannerBar(){
   const code=bidx<batch.length?batch[bidx].code:null;
   const boxLabel=getTargetBoxLabel()||'------';
-  document.getElementById('dsb-box').textContent=`${boxLabel}のBOXをスキャン`;
+  document.getElementById('dsb-box').textContent=t('dsbBoxFmt',boxLabel);
   if(code&&DB[code]){
     const item=DB[code];
     document.getElementById('dsb-code').textContent=`${code} ／ ${item.type}`;
-    drawItemShape(document.getElementById('dsb-canvas'),code,64); // #4: larger
+    drawItemShape(document.getElementById('dsb-canvas'),code,64);
   }else{
-    document.getElementById('dsb-code').textContent='----';
+    document.getElementById('dsb-code').textContent=t('dsbCodeDefault');
   }
-  document.getElementById('dsb-prog').textContent=
-    `${bidx+1} / ${batch.length}  残り${batch.length-bidx}個`;
+  document.getElementById('dsb-prog').textContent=t('dsbProgFmt',bidx+1,batch.length,batch.length-bidx);
 }
 
 function openDrawerPanel(dr,shelf){
   drawerOpen=true;currentDrawer=dr;currentDrawerShelf=shelf;
   document.getElementById('dp-title').textContent=dr.label;
   const dpShelfLabel=shelf.ltr+String(shelf.colNum/100|0).padStart(2,'0');
-  document.getElementById('dp-shelf-lbl').textContent=`棚 ${dpShelfLabel}`;
+  document.getElementById('dp-shelf-lbl').textContent=(lang==='ja'?'棚 ':'Shelf ')+dpShelfLabel;
   hide('dp-confirm');hide('dp-pre-scan');hide('dp-empty');
   hide('shelf-panel');panelOpen=false;
   document.getElementById('scan-btn').style.display='none';
@@ -1649,6 +1712,7 @@ function openDrawerPanel(dr,shelf){
   drawerPhysicsActive=true;
   if(dr.items.length===0)show('dp-empty');
   renderDrawerCanvas();
+  if(tutorialMode&&tutStep===3) advanceTut(4); // 引き出し開いた → 商材タップへ
 }
 
 function initPhysItems(dr,W,H){
@@ -1860,10 +1924,12 @@ function selectDrawerItem(idx){
   selItemData={physIdx:idx,code,drawer:currentDrawer,shelf:currentDrawerShelf};
   hide('dp-confirm');
   show('dp-pre-scan');
+  if(tutorialMode&&tutStep===4) advanceTut(5); // 商材タップ → スキャンタップへ
 }
 
 document.getElementById('dpc-scan').onclick=()=>{
   if(!selItemData)return;
+  if(tutorialMode&&tutStep===5) advanceTut(6); // スキャンタップ → コンテナへタップ
   const{code}=selItemData;
   const tc=bidx<batch.length?batch[bidx].code:null;
   const isMatch=code===tc;
@@ -1871,19 +1937,17 @@ document.getElementById('dpc-scan').onclick=()=>{
   const iconEl=document.getElementById('dpc-result-icon');
   if(isMatch){
     iconEl.textContent='✓';
-    matchEl.textContent='ピックしました！';
+    matchEl.textContent=t('matchOk');
     matchEl.className='ok';
-    // スキャン時点でピック完了処理
     bidx++;updateHUD();
     updateDrawerScannerBar();
     totalPicks++;
-    selItemData.scanned=true; // コンテナに入れる前にロスト判定用フラグ
-    showToast('商材をピックしました',`残り${batch.length-bidx}個`,'ok');
+    selItemData.scanned=true;
+    showToast(t('toastPickedItem'),t('toastRemFmt',batch.length-bidx),'ok');
   }else{
     iconEl.textContent='✗';
-    matchEl.textContent='商材がちがいます';
+    matchEl.textContent=t('matchNg');
     matchEl.className='ng';
-    // ミスはコンテナに入れた時点で記録（スキャン時点ではエラーにしない）
   }
   hide('dp-pre-scan');
   show('dp-confirm');
@@ -1895,7 +1959,7 @@ document.getElementById('dpc-ok').onclick=()=>{
   // 違う商材をコンテナに入れた場合はエラー（ミス）
   if(!selItemData.scanned){
     totalMisses++;
-    showToast('違う商材です！','ミスが記録されました','ng');
+    showToast(t('toastWrongItem'),t('toastMissNote'),'ng');
   }
   // Remove from drawer items array
   const drItemIdx=drawer.items.indexOf(code);
@@ -1906,14 +1970,15 @@ document.getElementById('dpc-ok').onclick=()=>{
   renderDrawerCanvas();     // immediate redraw so item vanishes instantly
   container.push(code);
   hide('dp-confirm');selItemData=null;
+  if(tutorialMode&&tutStep===6) advanceTut(7); // コンテナへ → 回収ゾーンへ
   // バッチ完了チェック（bidxはスキャン時点で既に進んでいる）
   if(bidx>=batch.length){
     setTimeout(()=>{
       closeDrawerPanel();
       gameState=GS.BATCH_DONE;
-      const stats=`${batch.length}個ピック完了`;
-      document.getElementById('wf-batch-sub').textContent=`${stats}\n\nコンテナがいっぱいになりました\n回収ゾーンへ持っていって下さい`;
+      document.getElementById('wf-batch-sub').textContent=t('batchSubFmt',batch.length);
       show('wf-batch');
+      if(tutorialMode) advanceTut(7); // バッチ完了=チュートリアル最終ステップ
     },300);
   }
 };
@@ -1947,12 +2012,12 @@ function closeDrawerPanel(){
 // ══════════════════════════════════════════════════════════════
 document.getElementById('wf-batch-go').onclick=()=>{
   hide('wf-batch');gameState=GS.RETURNING;
-  updateHUDStateMsg('回収ゾーンへ移動！コンテナを届けよう');
+  updateHUDStateMsg(t('hudReturn'));
 };
 document.getElementById('wf-return-go').onclick=()=>{
   hide('wf-return');gameState=GS.DEPOSITED;
-  P.hasCart=false; // #2: drop container at return zone
-  updateHUDStateMsg('空コンテナゾーンへ！新しいコンテナをセット');
+  P.hasCart=false;
+  updateHUDStateMsg(t('hudGetEmpty'));
 };
 
 emptyScanAnimId=null,emptyScanProgress=0;
@@ -1967,11 +2032,11 @@ function startEmptyContainerScan(){
     if(!scanHoldActive){cancelEmptyContainerScan();return;}
     emptyScanProgress+=2;
     bar.style.width=emptyScanProgress+'%';
-    msg.textContent=`スキャン中... ${emptyScanProgress}%`;
+    msg.textContent=t('emptyScanProgress',emptyScanProgress);
     if(emptyScanProgress>=100){
       clearInterval(emptyScanAnimId);
       bar.style.width='100%';
-      msg.textContent='スキャン完了！';
+      msg.textContent=t('emptyScanDone');
       setTimeout(startNewBatch,400);
     }
   },60);
@@ -1980,7 +2045,7 @@ function cancelEmptyContainerScan(){
   clearInterval(emptyScanAnimId);
   emptyScanProgress=0;
   document.getElementById('wf-bar').style.width='0%';
-  document.getElementById('wf-scan-msg').textContent='スキャナーボタンを長押し…';
+  document.getElementById('wf-scan-msg').textContent=t('emptyScanMsg');
 }
 function startNewBatch(){
   hide('wf-empty');
@@ -1988,7 +2053,8 @@ function startNewBatch(){
   advanceBatchCursors(); // #3: advance drawer/shelf cursor
   batch=mkBatch();bidx=0;container=[];bnum++;moveCount=0;t0=Date.now();
   gameState=GS.PICKING;
-  updateHUD();updateHUDStateMsg('スキャナー長押しでピック指示確認');
+  updateHUD();updateHUDStateMsg(t('hudPickOrder'));
+  if(tutorialMode) advanceTut(1); // → STEP2: スキャナーで確認
   renderMap();
 }
 
@@ -2004,7 +2070,7 @@ function updateHUD(){
     const entry=batch[bidx];
     const drawer=entry.shelf.drawers[entry.drawerId];
     const boxLabel=drawer?drawer.label:'------';
-    updateHUDStateMsg(`${boxLabel}のBOXをスキャンして下さい`);
+    updateHUDStateMsg(t('hudBoxFmt',boxLabel));
   }
 }
 function updateHUDStateMsg(msg){
@@ -2027,10 +2093,9 @@ function showToast(m,s,type){
 // ══════════════════════════════════════════════════════════════
 //  VOICE BOT
 // ══════════════════════════════════════════════════════════════
-const msgs=['「すみません！」','「どきます！」','「ちょっと！」','「はい！すぐ！」'];
 document.getElementById('voice-btn').addEventListener('click',()=>{
   const bb=document.getElementById('bbub');
-  bb.textContent=rrc(msgs);bb.style.display='block';
+  bb.textContent=rrc(t('voiceMsgs'));bb.style.display='block';
   setTimeout(()=>bb.style.display='none',1600);
   for(const b of bots){
     const dx=b.x-P.x,dy=b.y-P.y,d=Math.hypot(dx,dy);
@@ -2039,11 +2104,338 @@ document.getElementById('voice-btn').addEventListener('click',()=>{
 });
 
 // ══════════════════════════════════════════════════════════════
+//  I18N — LANGUAGE DATA
+// ══════════════════════════════════════════════════════════════
+const LANG={
+  ja:{
+    // intro
+    introSub:'〜 安全第一 〜',
+    introRules:['📱をみて行き先を確認','棚をタップして📱に表示された引き出しをタップ','商材をスキャンしてコンテナにいれる','バッチ終了後は回収ゾーンへ','出入口から出ると業務終了'],
+    hardModeLabel:'HARD MODE',
+    hardDesc:'ハイライトなし',
+    tutLabel:'チュートリアルあり',
+    // HUD
+    picksLabel:'ピック完了',
+    hudDefault:'スキャナー長押しでピック指示確認',
+    hudNoContainer:'→ 空コンテナゾーンへ移動\nスキャナー長押しでコンテナをセット',
+    hudPickOrder:'スキャナー長押しでピック指示確認',
+    hudReturn:'回収ゾーンへ移動！コンテナを届けよう',
+    hudGetEmpty:'空コンテナゾーンへ！新しいコンテナをセット',
+    hudBoxFmt:(l)=>`${l}のBOXをスキャンして下さい`,
+    // buttons
+    voiceLbl:'どいて',
+    backBtn:'◀ もどる',
+    scanHoldHint:'スキャナー長押し → 指示確認 / ターゲット表示',
+    // drawer
+    dpHint:'ドラッグでごそごそ｜タップで商材を選ぶ',
+    dpEmpty:'空の引き出し',
+    dsbLbl:'スキャン指示',
+    dsbBoxFmt:(l)=>`${l}のBOXをスキャン`,
+    dsbCodeDefault:'----',
+    dsbProgFmt:(c,t,r)=>`${c} / ${t}  残り${r}個`,
+    scanBtn2:'📱 スキャン',
+    containerBtn:'📦 コンテナへ',
+    putBackBtn:'↩ 引き出しに戻す',
+    // scanner panel
+    scanRemFmt:(n)=>`${n}個残り`,
+    scanBoxFmt:(l)=>`${l}のBOXを`,
+    scanBoxDone:'完了！',
+    scanReturnZone:'回収ゾーンへ',
+    scanContainerTxt:'コンテナ',
+    scanDeliverMsg:'持っていって！',
+    scanEmptyZone:'空コンテナゾーン',
+    scanEmptyBox:'空コンテナ',
+    scanHoldMsg:'長押しでスキャン！',
+    // scan result
+    matchOk:'ピックしました！',
+    matchNg:'商材がちがいます',
+    // workflow
+    batchTitle:'バッチ完了！',
+    batchSubFmt:(n)=>`${n}個ピック完了\n\nコンテナがいっぱいになりました\n回収ゾーンへ持っていって下さい`,
+    batchGoBtn:'回収ゾーンへ ▶',
+    returnTitle:'回収ゾーン',
+    returnSub:'コンテナを置きました<br><br>次は空コンテナゾーンへ',
+    returnGoBtn:'空コンテナゾーンへ ▶',
+    emptyTitle:'空コンテナゾーン',
+    emptyScanTarget:'スキャナーを長押しして<br>空コンテナをセット',
+    emptyScanMsg:'スキャナーボタンを長押し…',
+    emptyScanProgress:(p)=>`スキャン中... ${p}%`,
+    emptyScanDone:'スキャン完了！',
+    exitTitle:'本日の業務を<br>終了しますか？',
+    exitYes:'はい',
+    exitNo:'いいえ',
+    endTitle:'本日の勤務終了',
+    endThanks:'お疲れ様でした',
+    endRestart:'もう一度プレイ',
+    endStatsFmt:(hh,mm,ss,picks,misses,acc,prod)=>`勤務時間　　${hh}:${mm}:${ss}<br>ピック総数　${picks}個<br>ピックミス　${misses}回<br>正確率　　　${acc}%<br>生産性　　　${prod}個/時`,
+    // toast
+    toastWrongItem:'違う商材です！',
+    toastMissNote:'ミスが記録されました',
+    toastPickedItem:'商材をピックしました',
+    toastRemFmt:(n)=>`残り${n}個`,
+    toastTutDone:'チュートリアル完了！',
+    toastTutNote:'あとは自分でやってみよう',
+    // voice
+    voiceMsgs:['「すみません！」','「どきます！」','「ちょっと！」','「はい！すぐ！」'],
+    // map canvas
+    mapReturn:'回収', mapReturnSub:'ゾーン',
+    mapExit:'出入口', mapExitSub:'EXIT',
+    mapEmpty:'空コンテナ', mapEmptySub:'ゾーン',
+    mapEnd:'業務終了', mapEndSub:'ここを通過',
+    // tutorial
+    tutSteps:[
+      {step:'STEP 1/7',arrow:'→',msg:'右の「空コンテナゾーン」へ移動しよう！\nスキャナーボタンを長押しでコンテナをセット'},
+      {step:'STEP 2/7',arrow:'📱',msg:'スキャナーボタンを押して\n行き先の棚を確認しよう'},
+      {step:'STEP 3/7',arrow:'▶',msg:'点線の先の棚をタップして\n棚パネルを開こう'},
+      {step:'STEP 4/7',arrow:'👆',msg:'光っている引き出しをタップ！'},
+      {step:'STEP 5/7',arrow:'👆',msg:'引き出しの中の商材をタップ\nしてみよう'},
+      {step:'STEP 6/7',arrow:'📱',msg:'「スキャン」ボタンをタップ！'},
+      {step:'STEP 6/7',arrow:'📦',msg:'「コンテナへ」をタップして\n商材を入れよう'},
+      {step:'STEP 7/7',arrow:'🏁',msg:'バッチ完了！\n「回収ゾーン」へ移動しよう'},
+    ],
+  },
+  en:{
+    introSub:'~ SAFETY FIRST ~',
+    introRules:['📱 Check scanner for next pick','Tap shelf, then tap the correct drawer','Scan item and put it in the container','After batch: go to Return Zone','Walk through EXIT to end your shift'],
+    hardModeLabel:'HARD MODE',
+    hardDesc:'No highlights',
+    tutLabel:'TUTORIAL ON',
+    picksLabel:'picks done',
+    hudDefault:'Hold SCAN for pick order',
+    hudNoContainer:'→ Go to EMPTY BOX ZONE\nHold SCAN to grab a container',
+    hudPickOrder:'Hold SCAN for pick order',
+    hudReturn:'Go to RETURN ZONE! Drop container',
+    hudGetEmpty:'Go to EMPTY BOX! Grab new container',
+    hudBoxFmt:(l)=>`Scan BOX: ${l}`,
+    voiceLbl:'Move!',
+    backBtn:'◀ BACK',
+    scanHoldHint:'Hold SCAN → Show pick target',
+    dpHint:'Drag to search | Tap to pick item',
+    dpEmpty:'Empty drawer',
+    dsbLbl:'SCAN ORDER',
+    dsbBoxFmt:(l)=>`SCAN BOX: ${l}`,
+    dsbCodeDefault:'----',
+    dsbProgFmt:(c,t,r)=>`${c} / ${t}  ${r} remaining`,
+    scanBtn2:'📱 SCAN',
+    containerBtn:'📦 INTO BOX',
+    putBackBtn:'↩ PUT BACK',
+    scanRemFmt:(n)=>`${n} left`,
+    scanBoxFmt:(l)=>`BOX: ${l}`,
+    scanBoxDone:'DONE!',
+    scanReturnZone:'RETURN ZONE',
+    scanContainerTxt:'CONTAINER',
+    scanDeliverMsg:'Deliver it!',
+    scanEmptyZone:'EMPTY BOX ZONE',
+    scanEmptyBox:'EMPTY BOX',
+    scanHoldMsg:'Hold to scan!',
+    matchOk:'Item picked!',
+    matchNg:'Wrong item!',
+    batchTitle:'BATCH DONE!',
+    batchSubFmt:(n)=>`${n} items picked!\n\nContainer full.\nGo to Return Zone.`,
+    batchGoBtn:'RETURN ZONE ▶',
+    returnTitle:'RETURN ZONE',
+    returnSub:'Container dropped.<br><br>Now go to Empty Box Zone.',
+    returnGoBtn:'EMPTY BOX ZONE ▶',
+    emptyTitle:'EMPTY BOX ZONE',
+    emptyScanTarget:'Hold SCAN button<br>to grab an empty box',
+    emptyScanMsg:'Hold SCAN button...',
+    emptyScanProgress:(p)=>`Scanning... ${p}%`,
+    emptyScanDone:'Scan complete!',
+    exitTitle:'End today\'s<br>shift?',
+    exitYes:'YES',
+    exitNo:'NO',
+    endTitle:'SHIFT COMPLETE',
+    endThanks:'Good work today!',
+    endRestart:'PLAY AGAIN',
+    endStatsFmt:(hh,mm,ss,picks,misses,acc,prod)=>`Shift Time　${hh}:${mm}:${ss}<br>Total Picks　${picks}<br>Mistakes　　${misses}<br>Accuracy　　${acc}%<br>Productivity ${prod}/hr`,
+    toastWrongItem:'Wrong item!',
+    toastMissNote:'Miss recorded',
+    toastPickedItem:'Item picked!',
+    toastRemFmt:(n)=>`${n} left`,
+    toastTutDone:'Tutorial complete!',
+    toastTutNote:'Now try on your own!',
+    voiceMsgs:['"Excuse me!"','"Coming thru!"','"Hey!"','"Right away!"'],
+    mapReturn:'RETURN', mapReturnSub:'ZONE',
+    mapExit:'EXIT', mapExitSub:'DOOR',
+    mapEmpty:'EMPTY', mapEmptySub:'BOX',
+    mapEnd:'END', mapEndSub:'WALK THRU',
+    tutSteps:[
+      {step:'STEP 1/7',arrow:'→',msg:'Go to EMPTY BOX ZONE on the right!\nHold SCAN to grab a container'},
+      {step:'STEP 2/7',arrow:'📱',msg:'Press the SCAN button\nto check your pick destination'},
+      {step:'STEP 3/7',arrow:'▶',msg:'Tap the shelf\nat the end of the dotted line'},
+      {step:'STEP 4/7',arrow:'👆',msg:'Tap the glowing drawer!'},
+      {step:'STEP 5/7',arrow:'👆',msg:'Tap an item\ninside the drawer'},
+      {step:'STEP 6/7',arrow:'📱',msg:'Tap the SCAN button!'},
+      {step:'STEP 6/7',arrow:'📦',msg:'Tap INTO BOX\nto put item in container'},
+      {step:'STEP 7/7',arrow:'🏁',msg:'Batch done!\nGo to the RETURN ZONE'},
+    ],
+  },
+};
+function t(key,...args){
+  const d=LANG[lang][key];
+  return typeof d==='function'?d(...args):d;
+}
+function applyLang(){
+  const L=LANG[lang];
+  // Lang buttons
+  document.getElementById('lang-ja').classList.toggle('active',lang==='ja');
+  document.getElementById('lang-en').classList.toggle('active',lang==='en');
+  // Intro
+  document.getElementById('intro-sub').textContent=L.introSub;
+  const rl=document.getElementById('intro-rules-list');
+  if(rl) rl.innerHTML=L.introRules.map(r=>`<li>${r}</li>`).join('');
+  document.getElementById('hard-mode-lbl').textContent=L.hardModeLabel;
+  document.getElementById('hard-desc').textContent=L.hardDesc;
+  document.getElementById('tut-chk-lbl').textContent=L.tutLabel;
+  // HUD static
+  const pl=document.getElementById('hud-picks-lbl');
+  if(pl) pl.textContent=L.picksLabel;
+  document.getElementById('hud-state-msg').textContent=L.hudDefault;
+  // Voice
+  const vl=document.getElementById('voice-lbl');
+  if(vl) vl.textContent=L.voiceLbl;
+  // Back buttons
+  document.getElementById('sp-hdr-back').textContent=L.backBtn;
+  document.getElementById('dp-back').textContent=L.backBtn;
+  // Shelf / drawer panel
+  document.getElementById('sp-scan-hold-hint').textContent=L.scanHoldHint;
+  document.getElementById('dp-hint').textContent=L.dpHint;
+  document.getElementById('dp-empty').textContent=L.dpEmpty;
+  document.getElementById('dsb-box-lbl').textContent=L.dsbLbl;
+  document.getElementById('dpc-scan').textContent=L.scanBtn2;
+  document.getElementById('dpc-ok').textContent=L.containerBtn;
+  document.getElementById('dpc-no').textContent=L.putBackBtn;
+  // Workflow overlays
+  document.getElementById('wf-batch-title').textContent=L.batchTitle;
+  document.getElementById('wf-batch-go').textContent=L.batchGoBtn;
+  document.getElementById('wf-return-title').textContent=L.returnTitle;
+  document.getElementById('wf-return-sub').innerHTML=L.returnSub;
+  document.getElementById('wf-return-go').textContent=L.returnGoBtn;
+  document.getElementById('wf-empty-title').textContent=L.emptyTitle;
+  document.getElementById('wf-empty-scan-target').innerHTML=L.emptyScanTarget;
+  document.getElementById('wf-scan-msg').textContent=L.emptyScanMsg;
+  document.getElementById('wf-exit-title').innerHTML=L.exitTitle;
+  document.getElementById('wf-exit-yes').textContent=L.exitYes;
+  document.getElementById('wf-exit-no').textContent=L.exitNo;
+  document.getElementById('wf-end-title').textContent=L.endTitle;
+  document.getElementById('wf-end-thanks').textContent=L.endThanks;
+  document.getElementById('wf-end-restart').textContent=L.endRestart;
+  // Map canvas rebuild
+  floorCacheDirty=true;
+  if(running) renderMap();
+}
+
+// ══════════════════════════════════════════════════════════════
 //  HELPERS
 // ══════════════════════════════════════════════════════════════
 function show(id){document.getElementById(id).classList.add('show');}
 function hide(id){document.getElementById(id).classList.remove('show');}
 function hideEl(id){document.getElementById(id).style.display='none';}
+
+// ══════════════════════════════════════════════════════════════
+//  TUTORIAL
+// ══════════════════════════════════════════════════════════════
+function showTutStep(){
+  if(!tutorialMode)return;
+  const steps=t('tutSteps');
+  const s=steps[Math.min(tutStep,steps.length-1)];
+  document.getElementById('tut-step').textContent=s.step;
+  document.getElementById('tut-arrow').textContent=s.arrow;
+  document.getElementById('tut-msg').textContent=s.msg;
+  document.getElementById('tut-hint').classList.add('show');
+}
+function hideTutHint(){
+  document.getElementById('tut-hint').classList.remove('show');
+}
+function advanceTut(toStep){
+  if(!tutorialMode)return;
+  tutStep=toStep;
+  if(tutStep>=t('tutSteps').length){
+    tutorialMode=false;
+    hideTutHint();
+    showToast(t('toastTutDone'),t('toastTutNote'),'ok');
+    return;
+  }
+  showTutStep();
+}
+
+// Draw dotted path line from player to target on map canvas
+function drawTutPath(ctx){
+  if(!tutorialMode) return;
+  let tx=null,ty=null;
+  if(tutStep===0){
+    tx=8*T+T/2; ty=16*T+T/2;
+  } else if(tutStep===2&&bidx<batch.length){
+    const entry=batch[bidx];
+    const ar=accessRow(entry.shelf.row);
+    tx=entry.shelf.col*T+T/2; ty=ar*T+T/2;
+  } else if(tutStep===7){
+    tx=2*T+T/2; ty=16*T+T/2;
+  }
+  if(tx===null) return;
+
+  const dx=tx-P.x, dy=ty-P.y;
+  const dist=Math.hypot(dx,dy);
+  if(dist<4) return;
+  const ux=dx/dist, uy=dy/dist;
+
+  ctx.save();
+
+  // ── 白いアウトライン（視認性UP）──
+  ctx.strokeStyle='rgba(255,255,255,0.7)';
+  ctx.lineWidth=9;
+  ctx.setLineDash([18,12]);
+  ctx.lineDashOffset=-pulseTick*8;
+  ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(P.x+ux*20, P.y+uy*20);
+  ctx.lineTo(tx-ux*26,  ty-uy*26);
+  ctx.stroke();
+
+  // ── 明るい黄緑の本線 ──
+  ctx.strokeStyle='#ffff00';
+  ctx.lineWidth=5;
+  ctx.setLineDash([18,12]);
+  ctx.lineDashOffset=-pulseTick*8;
+  ctx.beginPath();
+  ctx.moveTo(P.x+ux*20, P.y+uy*20);
+  ctx.lineTo(tx-ux*26,  ty-uy*26);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ── 矢印ヘッド ──
+  const ax=tx-ux*10, ay=ty-uy*10;
+  const nx=-uy, ny=ux; // 法線
+  const arrowA=0.7+0.3*Math.sin(pulseTick*4);
+  ctx.fillStyle=`rgba(255,255,0,${arrowA})`;
+  ctx.strokeStyle='rgba(255,255,255,0.8)';
+  ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(ax+ux*20,       ay+uy*20);
+  ctx.lineTo(ax+nx*10-ux*4,  ay+ny*10-uy*4);
+  ctx.lineTo(ax-nx*10-ux*4,  ay-ny*10-uy*4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // ── ゴールマーカー（2重リング＋パルス）──
+  const r1=18+6*Math.sin(pulseTick*3);
+  const r2=10;
+  const ga=0.6+0.4*Math.sin(pulseTick*3);
+  // 外リング白
+  ctx.strokeStyle=`rgba(255,255,255,${ga})`;
+  ctx.lineWidth=4;
+  ctx.beginPath(); ctx.arc(tx,ty,r1,0,Math.PI*2); ctx.stroke();
+  // 内リング黄
+  ctx.strokeStyle=`rgba(255,255,0,${ga})`;
+  ctx.lineWidth=3;
+  ctx.beginPath(); ctx.arc(tx,ty,r2,0,Math.PI*2); ctx.stroke();
+  // 中心塗り
+  ctx.fillStyle=`rgba(255,255,0,${ga*0.5})`;
+  ctx.beginPath(); ctx.arc(tx,ty,r2,0,Math.PI*2); ctx.fill();
+
+  ctx.restore();
+}
 
 // ══════════════════════════════════════════════════════════════
 //  RESIZE
@@ -2083,8 +2475,23 @@ document.getElementById('bgm-btn').addEventListener('click',()=>{
   setBgmOn(!bgmOn);
 });
 
+// ── Language switcher ──
+document.getElementById('lang-ja').addEventListener('click',()=>{
+  if(lang==='ja')return; lang='ja'; applyLang();
+});
+document.getElementById('lang-en').addEventListener('click',()=>{
+  if(lang==='en')return; lang='en'; applyLang();
+});
+applyLang(); // apply on initial load
+
+// ハードモード選択でチュートリアル選択を非表示
+document.getElementById('hard-mode-chk').addEventListener('change',function(){
+  document.getElementById('tut-choice').style.display=this.checked?'none':'flex';
+});
+
 document.getElementById('intro-go').onclick=()=>{
   hardMode=document.getElementById('hard-mode-chk').checked;
+  tutorialMode=!hardMode && document.getElementById('tutorial-chk').checked;
   buildDB(hardMode?TYPES_HARD:TYPES_NORMAL);
   reinitShelves(); // rebuild with correct fill rates and item pool
   document.getElementById('intro').style.display='none';
@@ -2094,9 +2501,17 @@ document.getElementById('intro-go').onclick=()=>{
   batchShelfCursor=0;batchColCursor=0;batchDrawerCursor=0;
   batch=mkBatch();bidx=0;container=[];t0=Date.now();moveCount=0;bnum=1;
   totalPicks=0;totalMisses=0;totalLost=0;startTime=Date.now();
-  P.x=4.5*T;P.y=15.5*T;P.hasCart=true;
+  // スタート位置: J棚(row14)のアクセス行(row15)、col5(J-14)の前
+  P.x=5.5*T;P.y=15.5*T;P.hasCart=false;
   updateHUD();
-  gameState=GS.PICKING;
+  // コンテナなし → まず空コンテナゾーンへ
+  gameState=GS.DEPOSITED;
+  if(tutorialMode){
+    tutStep=0;
+    showTutStep();
+  } else {
+    updateHUDStateMsg(t('hudNoContainer'));
+  }
   running=true;
   resize();
   _lastRaf=0;
