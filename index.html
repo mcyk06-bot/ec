@@ -514,13 +514,12 @@ body{display:flex;align-items:center;justify-content:center;}
     </div>
   </div>
 
-  <!-- 勤務終了サマリー -->
   <div class="wf-overlay" id="wf-end">
     <div class="wf-icon">⭐</div>
-    <div class="wf-title" style="font-size:9px;letter-spacing:.03em;">本日の勤務終了</div>
-    <div id="wf-end-stats" style="font-family:'Press Start 2P',monospace;font-size:7px;color:#8bac0f;line-height:2.2;text-align:left;margin:18px 0 6px;width:100%;max-width:280px;"></div>
-    <div class="wf-title" style="font-size:10px;color:#9bbc0f;margin-top:8px;">お疲れ様でした</div>
-    <button class="wf-btn" id="wf-end-restart" style="margin-top:20px;font-size:7px;">もう一度プレイ</button>
+    <div class="wf-title" style="font-size:13px;letter-spacing:.03em;">本日の勤務終了</div>
+    <div id="wf-end-stats" style="font-family:'Press Start 2P',monospace;font-size:10px;color:#8bac0f;line-height:2.6;text-align:left;margin:18px 0 6px;width:100%;max-width:280px;"></div>
+    <div class="wf-title" style="font-size:13px;color:#9bbc0f;margin-top:8px;">お疲れ様でした</div>
+    <button class="wf-btn" id="wf-end-restart" style="margin-top:20px;font-size:9px;">もう一度プレイ</button>
   </div>
 
   <!-- Toast -->
@@ -557,7 +556,7 @@ body{display:flex;align-items:center;justify-content:center;}
 // ── ALL STATE VARIABLES DECLARED FIRST (prevent TDZ errors) ──
 let hardMode=false;
 let gameState, batch, bidx, bnum, container, t0, moveCount;
-let totalPicks=0, totalMisses=0, startTime=0;  // 勤務統計
+let totalPicks=0, totalMisses=0, totalLost=0, startTime=0;  // 勤務統計
 let exitTimer=0;
 let selItemData=null;
 let panelOpen=false, drawerOpen=false;
@@ -1393,6 +1392,7 @@ function showEndStats(){
     `勤務時間　　${hh}:${mm}:${ss}<br>`+
     `ピック総数　${totalPicks}個<br>`+
     `ミスの数　　${totalMisses}回<br>`+
+    `ピックショート　${totalLost}回<br>`+
     `正確率　　　${accuracy}%<br>`+
     `生産性　　　${productivity}個/時`;
   hide('wf-exit-confirm');
@@ -1872,12 +1872,19 @@ document.getElementById('dpc-scan').onclick=()=>{
   const iconEl=document.getElementById('dpc-result-icon');
   if(isMatch){
     iconEl.textContent='✓';
-    matchEl.textContent='商材をスキャンしました'; // #5
+    matchEl.textContent='ピックしました！';
     matchEl.className='ok';
+    // スキャン時点でピック完了処理
+    bidx++;updateHUD();
+    updateDrawerScannerBar();
+    totalPicks++;
+    selItemData.scanned=true; // コンテナに入れる前にロスト判定用フラグ
+    showToast('商材をピックしました',`残り${batch.length-bidx}個`,'ok');
   }else{
     iconEl.textContent='✗';
-    matchEl.textContent='商材がちがいます'; // #5
+    matchEl.textContent='商材がちがいます';
     matchEl.className='ng';
+    totalMisses++;
   }
   hide('dp-pre-scan');
   show('dp-confirm');
@@ -1885,8 +1892,7 @@ document.getElementById('dpc-scan').onclick=()=>{
 
 document.getElementById('dpc-ok').onclick=()=>{
   if(!selItemData)return;
-  const{physIdx,code,drawer,shelf}=selItemData;
-  const tc=bidx<batch.length?batch[bidx].code:null;
+  const{physIdx,code,drawer}=selItemData;
   // Remove from drawer items array
   const drItemIdx=drawer.items.indexOf(code);
   if(drItemIdx>=0)drawer.items.splice(drItemIdx,1);
@@ -1896,31 +1902,34 @@ document.getElementById('dpc-ok').onclick=()=>{
   renderDrawerCanvas();     // immediate redraw so item vanishes instantly
   container.push(code);
   hide('dp-confirm');selItemData=null;
-  if(code===tc){
-    bidx++;updateHUD();
-    updateDrawerScannerBar();
-    if(bidx>=batch.length){
-      setTimeout(()=>{
-        closeDrawerPanel();
-        gameState=GS.BATCH_DONE;
-        const stats=`${batch.length}個ピック完了`;
-        document.getElementById('wf-batch-sub').textContent=`${stats}\n\nコンテナがいっぱいになりました\n回収ゾーンへ持っていって下さい`;
-        show('wf-batch');
-      },300);
-      return;
-    }
-    totalPicks++;showToast('商材をピックしました',`残り${batch.length-bidx}個`,'ok'); // #5
-  }else{
-    totalMisses++;showToast('コンテナへ','バッチ外アイテム','ng');
+  // バッチ完了チェック（bidxはスキャン時点で既に進んでいる）
+  if(bidx>=batch.length){
+    setTimeout(()=>{
+      closeDrawerPanel();
+      gameState=GS.BATCH_DONE;
+      const stats=`${batch.length}個ピック完了`;
+      document.getElementById('wf-batch-sub').textContent=`${stats}\n\nコンテナがいっぱいになりました\n回収ゾーンへ持っていって下さい`;
+      show('wf-batch');
+    },300);
   }
 };
 document.getElementById('dpc-no').onclick=()=>{
+  if(selItemData && selItemData.scanned){
+    // スキャン済みなのに引き出しに戻す＝ピックショート（プレイヤーは気づかない）
+    totalMisses++;totalLost++;
+  }
   hide('dp-confirm');hide('dp-pre-scan');selItemData=null;
 };
 
 document.getElementById('dp-back').onclick=closeDrawerPanel;
 function closeDrawerPanel(){
+  // スキャン済みだがコンテナに入れずに離脱 → ピックショートロスト
+  if(selItemData && selItemData.scanned){
+    // スキャン済みのまま離脱＝ピックショート（プレイヤーは気づかない）
+    totalMisses++;totalLost++;
+  }
   hide('drawer-panel');hide('dp-confirm');hide('dp-pre-scan');drawerOpen=false;
+  selItemData=null;
   currentDrawer=null;currentDrawerShelf=null;
   document.getElementById('scan-btn').style.display='';
   document.getElementById('voice-btn').style.display='';
@@ -2080,7 +2089,7 @@ document.getElementById('intro-go').onclick=()=>{
   initBots();
   batchShelfCursor=0;batchColCursor=0;batchDrawerCursor=0;
   batch=mkBatch();bidx=0;container=[];t0=Date.now();moveCount=0;bnum=1;
-  totalPicks=0;totalMisses=0;startTime=Date.now();
+  totalPicks=0;totalMisses=0;totalLost=0;startTime=Date.now();
   P.x=4.5*T;P.y=15.5*T;P.hasCart=true;
   updateHUD();
   gameState=GS.PICKING;
