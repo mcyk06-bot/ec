@@ -1671,10 +1671,10 @@ function checkZoneTrigger(){
   if(tr<0||tr>=MROWS||tc<0||tc>=MCOLS){return;}  // マップ外は無視
   exitTimer=0;
   const t=map[tr][tc];
-  if(t===RETURN_ZONE&&gameState===GS.RETURNING){
-    gameState=GS.DEPOSITED;zoneCooldown=60;
-    show('wf-return');
-    if(tutorialMode&&tutStep>=7) advanceTut(99); // チュートリアル完了！
+  if(t===RETURN_ZONE&&(gameState===GS.RETURNING||gameState===GS.PICKING||gameState===GS.BATCH_DONE)&&P.hasCart&&container.length>0){
+    depositContainer();
+    zoneCooldown=60;
+    if(tutorialMode&&tutStep>=7) advanceTut(99);
   }
   if(t===EMPTY_ZONE&&gameState===GS.DEPOSITED){
     gameState=GS.GETTING_EMPTY;zoneCooldown=60;
@@ -1694,6 +1694,34 @@ function checkZoneTrigger(){
       showRankingOverlay();
     }
   }
+}
+
+function depositContainer(){
+  gameState=GS.DEPOSITED;
+  P.hasCart=false;
+  show('wf-return');
+  // ── 回収時点でFirebaseにスコア送信 ──
+  try{
+    const elapsed=Date.now()-startTime;
+    const hh=Math.floor(elapsed/3600000).toString().padStart(2,'0');
+    const mm=Math.floor((elapsed%3600000)/60000).toString().padStart(2,'0');
+    const ss=Math.floor((elapsed%60000)/1000).toString().padStart(2,'0');
+    const accuracy=totalPicks>0?Math.round((totalPicks/(totalPicks+totalMisses))*100):0;
+    const hrs=elapsed/3600000||1/60;
+    const productivity=Math.round(totalPicks/hrs);
+    const playerName=(document.getElementById('player-name').value.trim()||'名無し').slice(0,12);
+    if(window._fbPush && totalPicks>0){
+      window._fbPush(window._fbRef(window._fbDb,'scores'),{
+        name: playerName,
+        picks: totalPicks,
+        accuracy: accuracy,
+        productivity: productivity,
+        shiftTime: `${hh}:${mm}:${ss}`,
+        hardMode: hardMode,
+        ts: Date.now()
+      });
+    }
+  }catch(e){ console.warn('Firebase deposit score failed',e); }
 }
 
 function showExitConfirm(){
@@ -1748,10 +1776,10 @@ function showEndStats(){
   document.getElementById('wf-end-stats').innerHTML=t('endStatsFmt',hh,mm,ss,totalPicks,totalMisses,accuracy,productivity);
   hide('wf-exit-confirm');
   show('wf-end');
-  // ── Firebase にスコア送信 ──
+  // 最後の回収後にプレイした分を送信（コンテナに何か入っていれば）
   try{
     const playerName=(document.getElementById('player-name').value.trim()||'名無し').slice(0,12);
-    if(window._fbPush && totalPicks>0){
+    if(window._fbPush && totalPicks>0 && container.length>0){
       window._fbPush(window._fbRef(window._fbDb,'scores'),{
         name: playerName,
         picks: totalPicks,
@@ -2283,9 +2311,9 @@ document.getElementById('dpc-ok').onclick=()=>{
     setTimeout(()=>{
       closeDrawerPanel();
       gameState=GS.BATCH_DONE;
-      document.getElementById('wf-batch-sub').textContent=t('batchSubFmt',batch.length);
-      show('wf-batch');
-      if(tutorialMode) advanceTut(7); // バッチ完了=チュートリアル最終ステップ
+      showToast('バッチ完了！','回収ゾーンへ持っていこう','ok');
+      updateHUDStateMsg(t('hudReturn'));
+      if(tutorialMode) advanceTut(7);
     },300);
   }
 };
@@ -2359,12 +2387,17 @@ function cancelEmptyContainerScan(){
 }
 function startNewBatch(){
   hide('wf-empty');
-  P.hasCart=true; // #2: player picks up cart
-  advanceBatchCursors(); // #3: advance drawer/shelf cursor
-  batch=mkBatch();bidx=0;container=[];bnum++;moveCount=0;t0=Date.now();
+  P.hasCart=true;
+  container=[];
+  moveCount=0;t0=Date.now();
+  // バッチが終わっていたら新バッチ、まだ残っていたら続きから
+  if(bidx>=batch.length){
+    advanceBatchCursors();
+    batch=mkBatch();bidx=0;bnum++;
+  }
   gameState=GS.PICKING;
   updateHUD();updateHUDStateMsg(t('hudPickOrder'));
-  if(tutorialMode) advanceTut(1); // → STEP2: スキャナーで確認
+  if(tutorialMode) advanceTut(1);
   renderMap();
 }
 
