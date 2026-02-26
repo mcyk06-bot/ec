@@ -648,7 +648,7 @@ body{display:flex;align-items:center;justify-content:center;}
         style="width:100%;background:#0a2808;border:2px solid #306230;color:#9bbc0f;
                font-family:'Press Start 2P',monospace;font-size:11px;padding:8px 10px;
                text-align:center;outline:none;letter-spacing:.05em;"
-        onfocus="this.style.borderColor='#9bbc0f'" onblur="this.style.borderColor='#306230'">
+        onfocus="this.style.borderColor='#9bbc0f';setTimeout(()=>this.scrollIntoView({behavior:'smooth',block:'center'}),300)" onblur="this.style.borderColor='#306230'">
     </div>
 
     <button id="intro-go">START GAME</button>
@@ -689,7 +689,7 @@ body{display:flex;align-items:center;justify-content:center;}
 <!-- Firebase SDK -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
-import { getDatabase, ref, push, onValue, query, orderByChild, limitToLast }
+import { getDatabase, ref, push, onValue, query, orderByChild, limitToLast, set, remove, onDisconnect }
   from "https://www.gstatic.com/firebasejs/12.9.0/firebase-database.js";
 
 const firebaseConfig = {
@@ -714,6 +714,9 @@ window._fbOnValue   = onValue;
 window._fbQuery     = query;
 window._fbOrderBy   = orderByChild;
 window._fbLimitToLast = limitToLast;
+window._fbSet       = set;
+window._fbRemove    = remove;
+window._fbOnDisconnect = onDisconnect;
 
 // ランキングをイントロ画面に表示（ページ読み込み時＆毎分更新）
 function loadRanking(){
@@ -770,6 +773,11 @@ let zoneCooldown=0;
 let emptyScanAnimId=null, emptyScanProgress=0;
 let toastT=null;
 let bgmAudio=null, bgmOn=false;
+
+// ── マルチプレイヤー ──
+let myPlayerId=null;
+let otherPlayers={};  // { id: {x,y,face,hasCart,name,hardMode} }
+let _lastPosSend=0;   // throttle送信用
 
 // ══════════════════════════════════════════════════════════════
 //  PALETTE + FONT
@@ -1012,9 +1020,8 @@ for(let c=4;c<=6;c++) map[16][c]=ENTRANCE;
 for(let c=7;c<=9;c++) map[16][c]=EMPTY_ZONE;
 // row17 col4-6に業務終了ゾーン（出入口の真下）
 for(let col=4;col<=6;col++) map[17][col]=EXIT_ZONE;
-// row15-16 col0にランキングゾーン（出入口左の掲示板）
-map[15][0]=RANKING_ZONE;
-map[16][0]=RANKING_ZONE;
+// row17 col1-3にランキングゾーン（回収ゾーンの真下）
+for(let col=1;col<=3;col++) map[17][col]=RANKING_ZONE;
 
 const SMAP={};
 const ITEM_IDX={};
@@ -1171,7 +1178,54 @@ function botPickTarget(b){
 }
 
 // ══════════════════════════════════════════════════════════════
-//  COLLISION
+//  MULTIPLAYER — 位置同期
+// ══════════════════════════════════════════════════════════════
+function mpJoin(){
+  if(!window._fbSet) return;
+  // ユニークIDを生成（タブごとに1つ）
+  myPlayerId = 'p_' + Math.random().toString(36).slice(2,10);
+  const playerName = (document.getElementById('player-name').value.trim()||'名無し').slice(0,12);
+  const myRef = window._fbRef(window._fbDb, `players/${myPlayerId}`);
+  // 切断時に自動削除
+  window._fbOnDisconnect(myRef).remove();
+  // 初回書き込み
+  window._fbSet(myRef, {
+    name: playerName,
+    x: Math.round(P.x), y: Math.round(P.y),
+    face: P.face, hasCart: P.hasCart,
+    hardMode: hardMode,
+    ts: Date.now()
+  });
+  // 他プレイヤーをリアルタイム受信
+  window._fbOnValue(window._fbRef(window._fbDb,'players'), snap => {
+    otherPlayers = {};
+    snap.forEach(child => {
+      if(child.key !== myPlayerId){
+        otherPlayers[child.key] = child.val();
+      }
+    });
+  });
+}
+
+function mpLeave(){
+  if(!myPlayerId || !window._fbRemove) return;
+  window._fbRemove(window._fbRef(window._fbDb, `players/${myPlayerId}`));
+  myPlayerId = null;
+  otherPlayers = {};
+}
+
+function mpSendPos(now){
+  if(!myPlayerId || !window._fbSet) return;
+  if(now - _lastPosSend < 100) return; // 10fps制限
+  _lastPosSend = now;
+  window._fbSet(window._fbRef(window._fbDb, `players/${myPlayerId}`), {
+    name: (document.getElementById('player-name').value.trim()||'名無し').slice(0,12),
+    x: Math.round(P.x), y: Math.round(P.y),
+    face: P.face, hasCart: P.hasCart,
+    hardMode: hardMode,
+    ts: Date.now()
+  });
+}
 // ══════════════════════════════════════════════════════════════
 const CR=T*.3;
 const BOT_COLL_R=T*.38; // bot collision radius
@@ -1412,16 +1466,15 @@ function buildFloorCache(){
    fc.fillText(t('mapEnd'),zx+zw/2,zy+T*.35);
    fc.font=`bold ${T*.16|0}px '${PX}'`;
    fc.fillText(t('mapEndSub'),zx+zw/2,zy+T*.72);}
-  // ランキングゾーンラベル (col0, row15-16)
-  {const zx=0,zw=T;
+  // ランキングゾーンラベル (col1-3, row17 = 回収ゾーンの真下)
+  {const zx=1*T,zw=3*T,zy=17*T;
    fc.fillStyle='#5ab4ff';
-   fc.font=`bold ${T*.22|0}px '${PX}'`;
-   fc.fillText('🏆',zx+zw/2,15*T+T*.35);
+   fc.font=`bold ${T*.26|0}px '${PX}'`;
+   fc.fillText('🏆 RANKING',zx+zw/2,zy+T*.38);
    fc.font=`bold ${T*.14|0}px '${PX}'`;
-   fc.fillText('RANK',zx+zw/2,15*T+T*.72);
-   fc.fillText('ING',zx+zw/2,16*T+T*.35);
-   fc.fillStyle='rgba(90,180,255,0.3)';
-   fc.fillRect(zx+2,15*T+2,zw-4,T*2-4);}
+   fc.fillText('ここに来ると見られる',zx+zw/2,zy+T*.72);
+   fc.fillStyle='rgba(90,180,255,0.18)';
+   fc.fillRect(zx+2,zy+2,zw-4,T-4);}
   fc.restore();
   floorCacheDirty=false;
 }
@@ -1498,6 +1551,44 @@ function renderMap(){
     }
   }
 
+  // ── 他プレイヤー描画 ──
+  for(const op of Object.values(otherPlayers)){
+    // 古いデータ（10秒以上前）は表示しない
+    if(Date.now()-op.ts > 10000) continue;
+    const ox=op.x, oy=op.y;
+    const pw=SPR_PLAYER[0].length*PX_SIZE, ph=SPR_PLAYER.length*PX_SIZE;
+    // 半透明でスプライト描画
+    ctx.save();
+    ctx.globalAlpha=0.82;
+    // ハードモードプレイヤーは赤みがかったカラーで差別化
+    if(op.hardMode){
+      ctx.filter='hue-rotate(100deg) saturate(1.5)';
+    } else {
+      ctx.filter='hue-rotate(200deg) brightness(1.1)';
+    }
+    drawSprite(ctx,SPR_PLAYER,ox-pw/2,oy-ph,op.face<0);
+    if(op.hasCart){
+      const cw=SPR_CART[0].length*PX_SIZE,ch=SPR_CART.length*PX_SIZE;
+      const cartX=op.face>0 ? ox+pw/2-2 : ox-pw/2-cw+2;
+      drawSprite(ctx,SPR_CART,cartX,oy-ch,false);
+    }
+    ctx.restore();
+    // 名前タグ
+    ctx.save();
+    const nameY=oy-ph-10;
+    const name=op.name||'???';
+    ctx.font=`bold 8px '${PX}',monospace`;
+    ctx.textAlign='center';ctx.textBaseline='bottom';
+    // 背景
+    const tw=ctx.measureText(name).width+8;
+    ctx.fillStyle='rgba(10,28,5,0.78)';
+    ctx.fillRect(ox-tw/2,nameY-10,tw,11);
+    // テキスト
+    ctx.fillStyle= op.hardMode ? '#ff8888' : '#88ddff';
+    ctx.fillText(name,ox,nameY);
+    ctx.restore();
+  }
+
   // Player move indicator
   if(P.tx!==null){
     ctx.strokeStyle=GB1;ctx.lineWidth=1;ctx.setLineDash([4,4]);
@@ -1548,6 +1639,8 @@ function loop(now){
   requestAnimationFrame(loop);
   if(now-_lastRaf<31)return; // ~30fps cap
   _lastRaf=now;
+  // 位置をFirebaseに送信（10fps）
+  mpSendPos(now);
   // Move player
   const arr=moveEnt(P);
   if(arr&&pendingShelf){
@@ -1685,6 +1778,7 @@ document.getElementById('wf-exit-no').onclick=()=>{
   requestAnimationFrame(loop);
 };
 document.getElementById('wf-end-restart').onclick=()=>{
+  mpLeave();
   hide('wf-end');
   document.getElementById('intro').style.display='flex';
   applyLang();
@@ -2699,6 +2793,9 @@ function setBgmOn(on){
   }
 }
 
+window.addEventListener('pagehide', mpLeave);
+window.addEventListener('beforeunload', mpLeave);
+
 document.getElementById('bgm-btn').addEventListener('click',()=>{
   setBgmOn(!bgmOn);
 });
@@ -2757,6 +2854,8 @@ document.getElementById('intro-go').onclick=()=>{
   _lastRaf=0;
   renderMap();
   requestAnimationFrame(loop);
+  // マルチプレイヤー接続
+  mpJoin();
 };
 </script>
 </body>
